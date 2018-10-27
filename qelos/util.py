@@ -14,9 +14,32 @@ from copy import deepcopy as deepcopy
 import numpy as np
 import unidecode
 from IPython import embed
+import torch
 
 
-__all__ = ["ticktock", "argprun"]
+__all__ = ["ticktock", "argprun", "deep_copy", "copy_params"]
+
+
+def copy_params(source, target):
+    """ Copies parameters from source to target such that target has the same parameter values as source.
+        (if source params change, so does target's)"""
+    for k, v in source.named_parameters():
+        ks = k.split(".")
+        src_obj = source
+        tgt_obj = target
+        for _k in ks[:-1]:
+            src_obj = getattr(src_obj, _k)
+            tgt_obj = getattr(tgt_obj, _k)
+        if not isinstance(getattr(src_obj, ks[-1]), torch.nn.Parameter):
+            print("Couldn't copy: {}".format(k))
+        setattr(tgt_obj, ks[-1], v)
+
+
+def deep_copy(source, share_params=False):
+    tgt = deepcopy(source)
+    if share_params:
+        copy_params(source, tgt)
+    return tgt
 
 
 

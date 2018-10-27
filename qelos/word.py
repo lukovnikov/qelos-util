@@ -62,18 +62,13 @@ class WordEmb(torch.nn.Embedding):
             self.weight.data[self.padding_idx].fill_(0)
 
     def forward(self, x):
-        weight = self.weight
-        if self.word_dropout is not None:
-            word_dropout_mask = torch.ones(weight.size(0), 1, device=weight.device)
-            word_dropout_mask = self.word_dropout(word_dropout_mask)
-            weight = weight * word_dropout_mask
-        ret = torch.nn.functional.embedding(x, weight,
-            padding_idx=self.padding_idx,
-            max_norm=self.max_norm,
-            norm_type=self.norm_type,
-            scale_grad_by_freq=self.scale_grad_by_freq,
-            sparse=self.sparse)
+        ret = super(WordEmb, self).forward(x)
 
+        if self.word_dropout is not None:
+            word_dropout_mask = torch.ones(self.weight.size(0), 1, device=self.weight.device)
+            word_dropout_mask = self.word_dropout(word_dropout_mask).clamp(0, 1)
+            x_drop = word_dropout_mask[x]
+            ret = ret * x_drop
         mask = None
         if self.padding_idx is not None:
             mask = (x != self.padding_idx).int()
@@ -81,28 +76,6 @@ class WordEmb(torch.nn.Embedding):
 
     def freeze(self, val:bool=True):
         self.weight.requires_grad = not val
-
-    def replace_vectors(self, W, wdic, keep=None):
-        """
-        :param W:       (Tensor) matrix containing new vectors
-        :param wdic:    dictionary containing mappings
-                            from words that need to be replaced in self.D
-                            to ids of vectors in given W
-                        (keys need not all be covered by self.D)
-        :param keep:    set of words that must not be replaced even if they are in given wdic
-        :return:
-        """
-        if keep is not None:
-            wdic = {k: v for k, v in wdic.items() if k not in keep}
-        for k, v in self.D.items():
-            if k in wdic:
-                self.weight[v, :] = W[wdic[k], :]
-        self._set_grad_hook()
-
-    def replace_vectors_path(self, path, keep=None):
-        W, D = WordEmb._load_path(path)
-        W = torch.tensor(W)
-        self.replace_vectors(W, D, keep=keep)
 
     @classmethod
     def load_pretrained(cls, W, D, **kw): #weights, worddic=None):
@@ -146,41 +119,38 @@ class WordEmb(torch.nn.Embedding):
         return W, D
 
 
-class PartiallyPretrainedWordEmb(WordEmb):
-    def __init__(self, dim=50, worddic=None, keepvanilla=None, path=None, gradfracs=(1., 1.), **kw):
-        """
-        :param dim:         embedding dimension
-        :param worddic:     which words to create embeddings for, must map from strings to ids
-        :param keepvanilla: set of words which will be kept in the vanilla set of vectors
-                            even if they occur in pretrained embeddings
-        :param path:        where to load pretrained word from
-        :param gradfracs:   tuple (vanilla_frac, pretrained_frac)
-        :param kw:
-        """
-        super(PartiallyPretrainedWordEmb, self).__init__(dim=dim, worddic=worddic, **kw)
-        path = self._get_path(dim, path=path)
-        value, wdic = self.loadvalue(path, dim, indim=None,
-                                     worddic=None, maskid=None,
-                                     rareid=None)
-        value = torch.tensor(value)
-        self.mixmask = q.val(np.zeros((len(self.D),), dtype="float32")).v
+class OverriddenWordEmb(torch.nn.Module):
+    def __init__(self, base:WordEmb, override:WordEmb, which=None, whichnot=None):
+        super(OverriddenWordEmb, self).__init__()
+        self.D = base.D
+        self.base = base
+        self.over = override.adapt(base.D)
+        self.vecdim = self.base.vecdim
+        assert(not (which is not None and whichnot is not None))
+        numout = max(base.D.values()) + 1
+        whichnot = set()
 
-        for k, v in self.D.items():
-            if k in wdic and (keepvanilla is None or k not in keepvanilla):
-                self.weight[v, :] = value[wdic[k], :]
-                self.mixmask[v] = 1
+        overridemask_val = np.zeros((numout,), dtype="float32")
+        if which is None:   # which: list of words to override
+            for k, v in base.D.items():     # for all symbols in base dic
+                if k in override.D and k not in whichnot:         # if also in override dic
+                    overridemask_val[v] = 1
+        else:
+            for k in which:
+                if k in override.D:     # TODO: if k from which is missing from base.D
+                    overridemask_val[base.D[k]] = 1
+        self.overridemask = q.val(overridemask_val).v
 
-        # self.weight = torch.nn.Parameter(self.weight)
-
-        self.gradfrac_vanilla, self.gradfrac_pretrained = gradfracs
-
-        def apply_gradfrac(grad):
-            if self.gradfrac_vanilla != 1.:
-                grad = grad * ((1 - self.mixmask.unsqueeze(1)) * q.v(self.gradfrac_vanilla)
-                               + self.mixmask.unsqueeze(1))
-            if self.gradfrac_pretrained != 1.:
-                grad = grad * (self.mixmask.unsqueeze(1) * q.v(self.gradfrac_pretrained)
-                               + (1 - self.mixmask.unsqueeze(1)))
-            return grad
-
-        self.weight.register_hook(apply_gradfrac)
+    def forward(self, x):
+        x = x.contiguous()
+        xshape = x.size()
+        x = x.view(-1)
+        base_emb, base_msk = self.base(x)
+        over_emb, over_msk = self.over(x)
+        over_msk_select = torch.gather(self.overridemask, 0, x)
+        emb = base_emb * (1 - over_msk_select.unsqueeze(1)) + over_emb * over_msk_select.unsqueeze(1)
+        emb = emb.view(*(xshape + (-1,)))
+        msk = None
+        if base_msk is not None:
+            msk = base_msk.view(xshape)
+        return emb, msk

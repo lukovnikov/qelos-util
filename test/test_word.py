@@ -12,7 +12,7 @@ class TestWordEmb(TestCase):
         m = q.WordEmb(10, worddic=dic)
         embedding, _ = m(Variable(torch.LongTensor([0,1,2])))
         self.assertEqual(embedding.size(), (3, 10))
-        trueemb = m.embedding.weight.cpu().detach().numpy()[0]
+        trueemb = m.weight.cpu().detach().numpy()[0]
         self.assertTrue(np.allclose(trueemb, embedding[0].detach().numpy()))
 
     def test_creation_masked(self):
@@ -56,35 +56,3 @@ class TestGlove(TestCase):
         print(np.linalg.norm(thevector - truevector))
         self.assertTrue(np.allclose(thevector, truevector))
         self.assertEqual(self.glove.weight.size(), (4000, 50))
-
-    def test_partially_loaded(self):
-        D = "<MASK> <RARE> cat dog person arizonaiceteaa".split()
-        D = dict(zip(D, range(len(D))))
-        baseemb = q.WordEmb(dim=50, worddic=D)
-        baseemb = baseemb.override(self.glove)
-
-        q.PartiallyPretrainedWordEmb.defaultpath = "../data/glove/miniglove.%dd"
-
-        plemb = q.PartiallyPretrainedWordEmb(dim=50, worddic=D,
-                         value=baseemb.base.embedding.weight.detach().numpy(),
-                         gradfracs=(1., 0.5))
-
-        x = torch.tensor(np.asarray([0, 1, 2, 3, 4, 5]), dtype=torch.int64)
-        base_out, base_mask = baseemb(x)
-        pl_out, mask = plemb(x)
-
-        self.assertTrue(np.allclose(base_out[2:].detach().numpy(), pl_out[2:].detach().numpy()))
-
-        # test gradients
-        l = pl_out.sum()
-        l.backward()
-
-        gradnorm = plemb.embedding.weight.grad.norm()
-        thegrad = plemb.embedding.weight.grad
-
-        print(gradnorm)
-        self.assertTrue(np.all(thegrad.detach().numpy()[0, :] == 0))
-        self.assertTrue(np.all(thegrad.detach().numpy()[[1,2,5], :] == 1.))
-        self.assertTrue(np.all(thegrad.detach().numpy()[[3, 4], :] == 0.5))
-
-        print(base_out - pl_out)
