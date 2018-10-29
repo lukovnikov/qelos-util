@@ -10,7 +10,8 @@ import warnings
 EPS = 1e-6
 
 
-__all__ = ["Accuracy", "SeqAccuracy", "SeqElemAccuracy", "MacroBLEU"]
+__all__ = ["Accuracy", "SeqAccuracy", "SeqElemAccuracy", "MacroBLEU",
+           "SmoothedCELoss"]
 
 
 def logsumexp(x, axis=-1):
@@ -33,7 +34,7 @@ def nan2zero(x):
 
 
 def inf2zero(x):
-    infmask = x == -np.inf
+    infmask = ((x == -np.inf) | (x == np.inf))
     if torch.any(infmask).item() == 1:
         _x_cpy = torch.zeros_like(x)
         _xv = x.masked_select(~infmask)
@@ -42,29 +43,7 @@ def inf2zero(x):
     return x
 
 
-class Loss(nn.Module):
-    def __init__(self, size_average=True, **kw):
-        super(Loss, self).__init__(**kw)
-        self.size_average = size_average
-
-    def forward(self, x, gold, mask=None, _noagg=False, **kw):
-        y, ignoremask = self._forward(x, gold, mask=mask, **kw)
-        y = y.float()
-        if _noagg:
-            return y, ignoremask
-
-        if ignoremask is not None:
-            y = y * ignoremask.float().clamp(0, 1)      # ensure ignoremask is not higher than 1
-        else:
-            total = y.size(0)
-
-        loss = y.sum()
-        if self.size_average:
-            loss /= total
-        return loss
-
-
-class DiscreteLoss(Loss):
+class DiscreteLoss(torch.nn.Module):
     """ Loss with ignore_index(es), provides default implementation of _get_ignore_mask """
     def __init__(self, size_average=True, ignore_index=None, **kw):
         super(DiscreteLoss, self).__init__(size_average=size_average, **kw)
@@ -73,22 +52,40 @@ class DiscreteLoss(Loss):
                 self.ignore_indices = [ignore_index]
         else:
             self.ignore_indices = None
+        self.size_average = size_average
 
-    def _get_ignore_mask(self, gold):
+    @staticmethod
+    def get_ignore_mask(gold, ignore_indices):
         mask = None     # (batsize,)
-        if self.ignore_indices is not None:
-            for ignore in self.ignore_indices:
+        if ignore_indices is not None:
+            for ignore in ignore_indices:
                 mask_i = (gold != ignore)   # zero for ignored ones
                 if mask is None:
                     mask = mask_i
                 else:
                     mask = mask & mask_i
+        if mask is None:
+            mask = torch.ones_like(gold)
         return mask
+
+    def forward(self, x, gold, mask=None, **kw):
+        y, ignoremask = self._forward(x, gold, mask=mask, **kw)
+        y = y.float()
+
+        if ignoremask is not None:
+            y = y * ignoremask.float().clamp(0, 1)  # ensure ignoremask is not higher than 1
+
+        total = y.size(0)
+
+        loss = y.sum()
+        if self.size_average:
+            loss /= total
+        return loss
 
 
 class Accuracy(DiscreteLoss):
     def _forward(self, x, gold):
-        ignoremask = self._get_ignore_mask(gold)
+        ignoremask = self.get_ignore_mask(gold, self.ignore_indices)
         maxes, best = torch.max(x, 1)
         same = best == gold
         if ignoremask is not None:
@@ -105,7 +102,7 @@ class SeqAccuracy(DiscreteLoss):
         :param gold: (batsize, seqlen) - ids of gold output symbols at every time step
         :return: loss value, ignormask
         """
-        ignoremask = self._get_ignore_mask(gold)
+        ignoremask = self.get_ignore_mask(gold, self.ignore_indices)
         _, best = torch.max(x, 2)       # (batsize, seqlen) - most probable symbols at every time step
         same = best == gold
         outignoremask = None
@@ -121,7 +118,7 @@ class SeqElemAccuracy(DiscreteLoss):    # TODO take end of sequence token into a
     def forward(self, x, gold):
         if x.size(1) > gold.size(1):
             x = x[:, :gold.size(1)]
-        ignoremask = self._get_ignore_mask(gold)
+        ignoremask = self.get_ignore_mask(gold, self.ignore_indices)
         maxes, argmaxes = torch.max(x, dim=2)
         diff = argmaxes == gold
         if ignoremask is not None:
@@ -152,7 +149,7 @@ class MacroBLEU(DiscreteLoss):      # TODO take end of sequence token into accou
     def forward(self, x, gold, mask=None):
         if x.size(1) > gold.size(1):
             x = x[:, :gold.size(1)]
-        ignoremask = self._get_ignore_mask(gold)
+        ignoremask = self.get_ignore_mask(gold, self.ignore_indices)
         maxes, argmaxes = torch.max(x, dim=2)
         ignore_id = None
         if self.ignore_indices is not None:
@@ -173,244 +170,119 @@ class MacroBLEU(DiscreteLoss):      # TODO take end of sequence token into accou
             bleus = bleus / total
         return bleus, total
 
-# =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
-# region NEW LOSSES
-class SeqKLLoss(DiscreteLoss):
-    """ Straight implementation of cross-entropy loss for sequence prediction.
-        Same as Sequence cross-entropy if no label smoothing.
-        To be used after torch.nn.Softmax() """
-
-    def __init__(self, time_average=True, time_agg=None, weight=None, size_average=True,
-                 ignore_index=None, label_smoothing=0., smooth_mix=0., mode="probs", **kw):
-        """
-
-        :param time_agg:        aggregation over time: if "avg", then averages, "sum" sums. Takes priority over time_average
-        :param time_average:    averages over time if True. Default False.
-        :param weight:          ?
-        :param size_average:    average over batch (True) or sum (False)
-        :param ignore_index:    which tokens in gold to ignore (mask)
-        :param label_smoothing: how much uniform label smoothing to perform (between 0 and 1) to get target distribution
-        :param smooth_mix:      how much to mix predictive distribution with target distribution
-        :param mode:            "probs" (probs must be normalized by Softmax()), "logits" (probs are logits), "logprobs" (probs are log probs, produced by LogSoftmax())
-        :param kw:
-        """
-        super(SeqKLLoss, self).__init__(size_average=size_average, ignore_index=ignore_index, **kw)
-        if time_agg is None:
-            time_agg = "avg" if time_average else "sum"
-        assert (time_agg in "sum avg".split())
-        self.time_agg = time_agg
-        self.label_smoothing = label_smoothing
-        self.smooth_mix = smooth_mix
+class CELoss(torch.nn.Module):
+    """ Cross entropy loss. """
+    def __init__(self, weight=None, reduction="elementwise_mean", ignore_index=None, mode="logits", **kw):
+        super(CELoss, self).__init__(**kw)
         self.mode = mode
-
-    def _forward(self, probs, gold, mask=None):
-        if q.v(self.label_smoothing) > 0. or q.v(self.smooth_mix) > 0.:
-            return self._forward_smooth(probs, gold, mask=mask)
+        if mode in ("logprobs", "probs"):
+            self.ce = torch.nn.NLLLoss(weight=weight, reduction=reduction, ignore_index=ignore_index)
+        elif mode == "logits":
+            self.ce = torch.nn.CrossEntropyLoss(weight=weight, reduction=reduction, ignore_index=ignore_index)
         else:
-            return self._forward_normal(probs, gold, mask=mask)
+            raise q.SumTingWongException("unknown mode {}".format(mode))
 
-    def _forward_smooth(self, probs, gold, mask=None):
-        if self.mode != "probs":
-            raise NotImplemented("'logits' and 'logprobs' mode not implemented with softened targets (TODO)")
-
-        if probs.size(1) > gold.size(1):
-            probs = probs[:, :gold.size(1)]
-        batsize, seqlen, vocsize = probs.size()
-
-        ignoremask = self._get_ignore_mask(gold)  # whether to ignore a certain time step of a certain example
-        outignoremask = None
-
-        if mask is not None:
-            probs = probs * mask
-
-        prob_mask = (probs > 0).float()  # (batsize, seqlen, vocsize)
-        if isinstance(q.v(self.label_smoothing), float):
-            lsv = q.v(self.label_smoothing)
-            assert (lsv >= 0 and lsv <= 1)
-            prob_mask_weights = lsv / prob_mask.sum(2)
-            _gold = torch.ones_like(probs) * prob_mask_weights.unsqueeze(2) * prob_mask  # masked uniform
-            _gold.scatter_(2, gold.unsqueeze(2), (1 - lsv) + prob_mask_weights.unsqueeze(2))
-        else:
-            _gold = self.label_smoothing(gold, prob_mask)
-
-        if q.v(self.smooth_mix) > 0.:
-            smv = q.v(self.smooth_mix)
-            _gold = _gold * (1 - smv) + smv * probs.detach()
-
-        assert (np.allclose(_gold.sum(2).cpu().detach().numpy(),
-                            np.ones((_gold.size(0), _gold.size(1))), atol=1e-3))
-
-        log_probs = - (torch.log(probs + (1 - prob_mask)) - torch.log(_gold + (1 - prob_mask)))
-        # REMARK: (1 - prob_mask) is added before log() to ensure that no -inf's are there
-        kls = log_probs * _gold
-        kls = kls * prob_mask  # prob can be removed
-        gold_log_probs = kls.sum(2)
-
-        seqlens = torch.tensor(seqlen).float().to(gold.device)
-
-        if ignoremask is not None:
-            gold_log_probs = gold_log_probs * ignoremask.float()  # should work because normal softmax was used --> no infs
-            seqlens = ignoremask.float().sum(1)
-            outignoremask = ignoremask.long().sum(1) > 0
-
-        gold_log_probs = gold_log_probs.sum(1)
-        if self.time_agg == "avg":
-            gold_log_probs = gold_log_probs / seqlens.clamp(min=EPS)
-
-        return gold_log_probs, outignoremask
-
-    def _forward_normal(self, probs, gold, mask=None):
-        if probs.size(1) > gold.size(1):  # if probs is longer than gold seq
-            probs = probs[:, :gold.size(1)]
-        batsize, seqlen, vocsize = probs.size()
-
-        ignoremask = self._get_ignore_mask(gold)
-        outignoremask = None
-
-        if mask is not None:
-            if self.mode == "probs":
-                probs = probs * mask
-            elif self.mode == "logits":
-                probs = probs + torch.log(mask.float())
-            elif self.mode == "logprobs":
-                raise NotImplemented("mask in logprobs not implemented")
-
-        gold_probs = probs.gather(2, gold.unsqueeze(2))
-        assert (gold_probs.size(2) == 1)
-        gold_probs = gold_probs.squeeze(2)
-
-        if self.mode == "probs":
-            gold_log_probs = - torch.log(gold_probs.clamp(min=1e-9))
-        elif self.mode == "logprobs":
-            gold_log_probs = - gold_probs
-        elif self.mode == "logits":
-            gold_log_probs = - gold_probs + logsumexp(probs)
-
-        seqlens = torch.tensor(seqlen).float().to(gold.device)
-
-        if ignoremask is not None:
-            gold_log_probs = gold_log_probs * ignoremask.float()  # should work because normal softmax was used --> no infs
-            seqlens = ignoremask.float().sum(1)
-            outignoremask = ignoremask.long().sum(1) > 0
-
-        gold_log_probs = gold_log_probs.sum(1)
-        if self.time_agg == "avg":
-            gold_log_probs = gold_log_probs / seqlens.clamp(min=EPS)
-
-        return gold_log_probs, outignoremask
+    def forward(self, probs, gold):
+        logprobs = torch.log(probs) if self.mode == "probs" else probs
+        ret = self.ce(logprobs, gold)
+        return ret
 
 
-class KLLoss(SeqKLLoss):
-    def __init__(self, weight=None, size_average=True, ignore_index=None, label_smoothing=0., smooth_mix=0.,
-                 mode="probs", **kw):
-        super(KLLoss, self).__init__(weight=weight, size_average=size_average, ignore_index=ignore_index,
-                                     label_smoothing=label_smoothing, smooth_mix=smooth_mix, mode=mode, **kw)
+class SmoothedCELoss(torch.nn.Module):
+    """ CrossEntropyLoss with label smoothing. """
+    def __init__(self, reduction="elementwise_mean", ignore_index=None, smoothing=0., mode="logits", **kw):
+        super(SmoothedCELoss, self).__init__(**kw)
+        self.reduction, self.ignore_indices, self.smoothing = reduction, ignore_index, smoothing
+        self.mode = mode        # "logits", "probs", "logprobs"
+        self.kl = torch.nn.KLDivLoss(reduction="none")
+        self.sm = torch.nn.LogSoftmax(-1) if self.mode == "logits" else None
 
-    def _forward(self, probs, gold, mask=None):  # (batsize, numsym), (batsize,) ints, (batsize, numsym) bool
-        # insert a seq dimension
-        probs = probs.unsqueeze(1)
-        gold = gold.unsqueeze(1)
-        if mask is not None:
-            mask = mask.unsqueeze(1)
-        logprobs, ignormask = super(KLLoss, self)._forward(probs, gold, mask=mask)
-        return logprobs, ignormask
-
-
-class SeqPPLLoss(SeqKLLoss):
-    def post_agg_epoch(self, x):
-        """ function applied after aggregation (avg/sum) over whole epoch (so far) """
-        return math.exp(x)
-
-
-class PPLLoss(KLLoss):
-    def post_agg_epoch(self, x):
-        return math.exp(x)
-
-
-class SeqDistillLoss(DiscreteLoss):
-    """ Distillation (KD) loss for sequences of categorical distributions """
-    def __init__(self, time_average=True, size_average=True, ignore_index=None,
-                 temperature=1., mixture=0.5, soft_gold_mode="logits", **kw):
+    def forward(self, probs, gold):
         """
-        :param time_average:    average over time
-        :param size_average:    average over batches
+        :param probs:   (batsize, ..., vocsize) logits
+        :param gold:    (batsize, ..., ) int ids of correct class
+        :return:
+        """
+        _prob_mask_crit = -np.infty if self.mode in "logits logprobs".split() else 0
+        lsv = q.v(self.smoothing)   # get value of label smoothing hyperparam
+        assert(lsv >= 0 and lsv <= 1)
+        prob_mask = (probs > _prob_mask_crit).float()     # (batsize, ..., vocsize) where probs are > 0, reverse engineering a -infty mask applied outside
+        prob_mask_weights = lsv / prob_mask.sum(-1, keepdim=True)
+        _gold = torch.ones_like(probs) * prob_mask_weights * prob_mask
+        _gold.scatter_(-1, gold.unsqueeze(-1), (1 - lsv) + prob_mask_weights)   # (batsize, ..., vocsize) probs
+        assert((_gold.sum(-1) - torch.ones_like(gold)).norm().item() < 1e-5)
+
+        logprobs = self.sm(probs) if self.mode == "logits" else (probs if self.mode == "logprobs" else torch.log(probs))
+        kl_divs = self.kl(logprobs, _gold)
+        # kl_divs = inf2zero(kl_divs)
+        kl_div = kl_divs.sum(-1)        # (batsize, ...) kl div per element
+
+        mask = DiscreteLoss.get_ignore_mask(gold, self.ignore_indices)
+        kl_div = kl_div * mask
+        ret = kl_div.sum()
+        if self.reduction == "elementwise_mean":
+            total = mask.sum()
+            ret = ret / total
+        elif self.reduction == "none":
+            ret = kl_div
+        return ret
+
+
+class DistillLoss(torch.nn.Module):
+    """ Distillation (KD) loss for sequences of categorical distributions """
+    def __init__(self, weight=None, reduction="elementwise_mean", ignore_index=None,
+                 temperature=1., mixture=0.5, **kw):
+        """
         :param ignore_index:    gold ids whose time steps will be ignored
         :param temperature:     softmax temperature (!: will not be applied if soft_gold_mode is not "logits")
         :param mixture:         mixing portion of soft and hard gold
-        :param soft_gold_mode:  "logits", "logprobs", "probs": how the softgold is normalized. If not "logits", temperatur will not be applied
         :param kw:
         """
-        super(SeqDistillLoss, self).__init__(size_average=size_average, ignore_index=ignore_index, **kw)
-        self.time_average = time_average
+        super(DistillLoss, self).__init__(**kw)
+        self.ignore_indices = ignore_index
+        self.reduction = reduction
         self.temperature = temperature
         self.mixture = mixture
-        self.soft_gold_mode = soft_gold_mode
         self.sm = torch.nn.Softmax(-1)
         self.logsm = torch.nn.LogSoftmax(-1)
-        if soft_gold_mode != "logits":
-            print("WARNING: temperature is not applied to soft gold in soft_gold_mode {}".format(soft_gold_mode))
+        self.hardCE = torch.nn.CrossEntropyLoss(reduction="none", ignore_index=ignore_index, weight=weight)
+        self.kl = torch.nn.KLDivLoss(reduction="none")
 
-    def _forward(self, probs, gold, mask=None):
+    def _forward(self, probs, gold):
         """
-        :param probs:       (batsize, seqlen, numsym) prediction vector of logits
-        :param gold:        tuple of (batsize, seqlen, numsym) soft gold and (batsize, seqlen) ints for hard gold
+        :param probs:       (batsize, ..., numsym) prediction vector of logits
+        :param gold:        tuple of (batsize, ..., numsym) soft gold logits and (batsize, ...) ints for hard gold
         """
-        assert(mask is None)    # masks should not be supported here
         softgold, hardgold = gold
         t = q.v(self.temperature)
         mix = q.v(self.mixture)
 
-        if probs.size(1) > softgold.size(1):
-            probs = probs[:, :softgold.size(1)]
-        batsize, seqlen, vocsize = probs.size()
-
-        ignoremask = self._get_ignore_mask(hardgold)
-        outignoremask = None
-
         # hard gold - normal CE, !!: probs are logits
-        hard_gold_log_probs = 0
+        hard_ce = 0
         if mix < 1:
-            hard_gold_probs = probs.gather(2, hardgold.unsqueeze(2))
-            assert(hard_gold_probs.size(2) == 1)
-            hard_gold_probs = hard_gold_probs.squeeze(2)
-            hard_gold_log_probs = - hard_gold_probs + logsumexp(probs)      # !!! no temperature necessary for hard gold
+            hard_ce = self.hardCE(probs, hardgold)
 
         # soft gold
-        kl = 0
+        kl_div = 0
         if mix > 0:
-            if self.soft_gold_mode in ("logits", "logprobs"):       # --> using LogSoftmax
-                _log_probs = self.logsm(probs / t)
-                if self.soft_gold_mode == "logits":
-                    if torch.any(probs == -np.infty).item() == 1:
-                        softgold = softgold + torch.log((probs != -np.infty).float())
-                    _log_softgold = self.logsm(softgold / t)
-                else:
-                    _log_softgold = softgold    # provided softgold was logprobs
-                _softgold = torch.exp(_log_softgold)
-                # assert(torch.all((_softgold.sum(-1) > 0.9999) & (_softgold.sum(-1) < 1.0001)).item() == 1)
-                kls = _softgold * (_log_softgold - _log_probs)        # KL
-            else:
-                _log_probs = self.logsm(probs / t)
-                kls = softgold * (torch.log(softgold) - _log_probs)
-            kls = nan2zero(kls)
-            kls = inf2zero(kls)
-            kl = kls.sum(2)
+            _log_probs = self.logsm(probs / t)
+            if torch.any(probs == -np.infty).item() == 1:
+                softgold = softgold + torch.log((probs != -np.infty).float())
+            _softgold = self.sm(softgold / t)
+            kl_divs = self.kl(_log_probs, _softgold)
+            # kl_divs = inf2zero(kl_divs)
+            kl_div = kl_divs.sum(-1)
 
-        loss = mix * kl + (1 - mix) * hard_gold_log_probs        # (batsize, seqlen)
+        # mix
+        loss = mix * kl_div + (1 - mix) * hard_ce        # (batsize, seqlen)
 
-        seqlens = torch.tensor(seqlen).float().to(softgold.device)
-
-        if ignoremask is not None:
-            loss = loss * ignoremask.float()
-            loss = nan2zero(loss)
-            seqlens = ignoremask.float().sum(1)
-            outignoremask = ignoremask.long().sum(1) > 0
-
-        _loss = loss.sum(1)
-        if self.time_average is True:
-            _loss = _loss / seqlens.clamp(min=EPS)
-
-        return _loss, outignoremask
-
-# endregion
+        mask = DiscreteLoss.get_ignore_mask(hardgold, self.ignore_indices)
+        loss = loss * mask
+        ret = loss.sum()
+        if self.reduction == "elementwise_mean":
+            total = mask.sum()
+            ret = ret / total
+        elif self.reduction == "none":
+            ret = loss
+        return ret
