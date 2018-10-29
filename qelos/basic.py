@@ -29,7 +29,7 @@ class RecDropout(torch.nn.Module):
         self.mask = None
         self.shareaxis = (shareaxis,) if isinstance(shareaxis, int) else shareaxis
 
-    def rec_reset(self):
+    def batch_reset(self):
         self.mask = None
 
     def forward(self, x):

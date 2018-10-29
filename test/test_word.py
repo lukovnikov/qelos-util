@@ -31,11 +31,9 @@ class TestWordEmb(TestCase):
 class TestGlove(TestCase):
     def setUp(self):
         path = "../data/glove/miniglove.50d"
+        self.path = path
         self.glove = q.WordEmb.load_pretrained_path(path)
-
-    def test_loaded(self):
-        thevector = self.glove.weight[self.glove.D["the"]].detach().numpy()
-        truevector = np.asarray([  4.18000013e-01,   2.49679998e-01,  -4.12420005e-01,
+        self.thevector = np.asarray([  4.18000013e-01,   2.49679998e-01,  -4.12420005e-01,
          1.21699996e-01,   3.45270008e-01,  -4.44569997e-02,
         -4.96879995e-01,  -1.78619996e-01,  -6.60229998e-04,
         -6.56599998e-01,   2.78430015e-01,  -1.47670001e-01,
@@ -52,7 +50,64 @@ class TestGlove(TestCase):
         -3.47579986e-01,  -4.56370004e-02,  -4.42510009e-01,
          1.87849998e-01,   2.78489990e-03,  -1.84110001e-01,
         -1.15139998e-01,  -7.85809994e-01])
+
+    def test_loaded(self):
+        thevector = self.glove.weight[self.glove.D["the"]].detach().numpy()
         self.assertEqual(self.glove.D["the"], 0)
-        print(np.linalg.norm(thevector - truevector))
-        self.assertTrue(np.allclose(thevector, truevector))
+        print(np.linalg.norm(thevector - self.thevector))
+        self.assertTrue(np.allclose(thevector, self.thevector))
         self.assertEqual(self.glove.weight.size(), (4000, 50))
+
+    def test_loaded_selection(self):
+        D = "<MASK> <RARE> cat dog person earlgreytea the".split()
+        D = dict(zip(D, range(len(D))))
+        glove = q.WordEmb.load_pretrained_path(self.path, selectD=D)
+        thevector = glove.weight[glove.D["the"]].detach().numpy()
+        print(glove.D["the"])
+        print(np.linalg.norm(thevector - self.thevector))
+        self.assertTrue(np.allclose(thevector, self.thevector))
+        print(glove.weight[0][:10])
+
+
+class TestSwitchedWordEmb(TestCase):
+    def test_it(self):
+        D = "<MASK> <RARE> cat dog person earlgreytea the".split()
+        D = dict(zip(D, range(len(D))))
+        base = q.WordEmb(50, worddic=D)
+        switched = q.SwitchedWordEmb(base)
+        words = "cat dog person".split()
+        over = q.WordEmb(50, worddic=D)
+        switched.override(over, selectwords=words)
+
+        x = torch.arange(0, len(D)).unsqueeze(0)
+        y, ymask = switched(x)
+
+        ybase, _ = base(x)
+        yover, _ = over(x)
+        ymix = torch.tensor([0,0,1,1,1,0,0]).float().unsqueeze(0).unsqueeze(-1)
+        y_ref = ybase * (1 - ymix) + yover * ymix
+        print((y - y_ref).norm())
+        self.assertTrue(np.allclose(y.detach().numpy(), y_ref.detach().numpy()))
+        print(y.size())
+
+    def test_it_with_glove(self):
+        path = "../data/glove/miniglove.50d"
+        D = "<MASK> <RARE> cat dog person earlgreytea the".split()
+        D = dict(zip(D, range(len(D))))
+        base = q.WordEmb(50, worddic=D)
+        switched = q.SwitchedWordEmb(base)
+        words = "cat dog person".split()
+        over = q.WordEmb.load_pretrained_path(path, selectD=D)
+        switched.override(over, selectwords=words)
+
+        x = torch.arange(0, len(D)).unsqueeze(0)
+        y, ymask = switched(x)
+
+        ybase, _ = base(x)
+        yover, _ = over(x)
+        ymix = torch.tensor([0, 0, 0, 1, 1, 0, 0]).float().unsqueeze(0).unsqueeze(-1)
+        y_ref = ybase * (1 - ymix) + yover * ymix
+        print((y - y_ref).norm())
+        self.assertTrue(np.allclose(y.detach().numpy(), y_ref.detach().numpy()))
+        print(y.size())
+
