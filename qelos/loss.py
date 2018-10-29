@@ -11,7 +11,7 @@ EPS = 1e-6
 
 
 __all__ = ["Accuracy", "SeqAccuracy", "SeqElemAccuracy", "MacroBLEU",
-           "SmoothedCELoss"]
+           "SmoothedCELoss", "CELoss", "DistillLoss"]
 
 
 def logsumexp(x, axis=-1):

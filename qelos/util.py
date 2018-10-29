@@ -23,7 +23,7 @@ from torch.utils.data import Dataset, DataLoader
 __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_unpack", "iscuda", "hyperparam", "v",
            "intercat", "masked_mean", "tensor_dataset", "datacat", "dataload", "datasplit",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
-           "StringMatrix", "tokenize"]
+           "StringMatrix", "tokenize", "recmap"]
 
 # region torch-related utils
 def copy_params(source, target):
@@ -259,6 +259,30 @@ def datasplit(npmats, splits=(80, 20), random=True):
 
 
 # region other utils
+def recmap(x, mapf):      # datastructure, mapping function for elements
+    if isinstance(x, dict):
+        for k in x:
+            x[k] = recmap(x[k], mapf)
+        return x
+    elif isinstance(x, list):
+        for i in range(len(x)):
+            x[i] = recmap(x[i], mapf)
+        return x
+    elif isinstance(x, tuple):
+        newtup = []
+        for i in range(len(x)):
+            newtup.append(recmap(x[i], mapf))
+        newtup = tuple(newtup)
+        return newtup
+    elif isinstance(x, set):
+        newset = set()
+        for k in x:
+            newset.add(recmap(k, mapf))
+        return newset
+    else:
+        return mapf(x)
+
+
 def iscallable(x):
     return hasattr(x, "__call__")
 
