@@ -155,9 +155,9 @@ def train_batch(_batch=None, model=None, optim=None, losses=None, device=torch.d
     :param on_end:              collection of functions to call when batch is done
     :return:
     """
-    if run is False:
-        kwargs = locals().copy()
-        return partial(train_batch, **kwargs)
+    # if run is False:
+    #     kwargs = locals().copy()
+    #     return partial(train_batch, **kwargs)
 
     [e() for e in on_start]
     optim.zero_grad()
@@ -225,9 +225,9 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
     :param on_end:
     :return:
     """
-    if run is False:
-        kwargs = locals().copy()
-        return partial(train_epoch, **kwargs)
+    # if run is False:
+    #     kwargs = locals().copy()
+    #     return partial(train_epoch, **kwargs)
 
     for loss in losses:
         loss.push_epoch_to_history(epoch=current_epoch-1)
@@ -266,9 +266,9 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
     :param on_end:
     :return:
     """
-    if run is False:
-        kwargs = locals().copy()
-        return partial(test_epoch, **kwargs)
+    # if run is False:
+    #     kwargs = locals().copy()
+    #     return partial(test_epoch, **kwargs)
 
     tt = q.ticktock("-")
     model.eval()
