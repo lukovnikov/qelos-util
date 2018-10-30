@@ -208,7 +208,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
 
 
 def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock("-"),
-             current_epoch=0, max_epochs=0, _train_batch=q.train_batch, on_start=tuple(), on_end=tuple(), run=False):
+             current_epoch=0, max_epochs=0, _train_batch=train_batch, on_start=tuple(), on_end=tuple(), run=False):
     """
     Performs an epoch of training on given model, with data from given dataloader, using given optimizer,
     with loss computed based on given losses.

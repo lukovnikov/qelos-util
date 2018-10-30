@@ -296,49 +296,6 @@ def run(lr=20.,
     # endregion
 
 
-def train_epoch_distill(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock("-"),
-             current_epoch=0, max_epochs=0, on_start=tuple(), on_end=tuple(), run=False,
-             mbase=None):
-    """
-    Performs an epoch of training on given model, with data from given dataloader, using given optimizer,
-    with loss computed based on given losses.
-    :param model:
-    :param dataloader:
-    :param optim:
-    :param losses:  list of loss wrappers
-    :param device:  device to put batches on
-    :param tt:
-    :param current_epoch:
-    :param max_epochs:
-    :param _train_batch:    train batch function, default is train_batch
-    :param on_start:
-    :param on_end:
-    :return:
-    """
-    # if run is False:
-    #     kwargs = locals().copy()
-    #     return partial(train_epoch, **kwargs)
-
-    for loss in losses:
-        loss.push_epoch_to_history(epoch=current_epoch-1)
-        loss.reset_agg()
-
-    [e() for e in on_start]
-
-    q.epoch_reset(model)
-
-    for i, _batch in enumerate(dataloader):
-        ttmsg = train_batch_distill(_batch=_batch, model=model, optim=optim, losses=losses, device=device,
-                             batch_number=i, max_batches=len(dataloader), current_epoch=current_epoch, max_epochs=max_epochs,
-                             run=True, mbase=)
-        tt.live(ttmsg)
-
-    tt.stoplive()
-    [e() for e in on_end]
-    ttmsg = q.pp_epoch_losses(*losses)
-    return ttmsg
-
-
 def train_batch_distill(batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
                 batch_number=-1, max_batches=0, current_epoch=0, max_epochs=0,
                 on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(), run=False,
@@ -374,7 +331,7 @@ def train_batch_distill(batch=None, model=None, optim=None, losses=None, device=
     batch_in = batch[:-1]
     gold = batch[-1]
 
-    # TODO: run batch_in through teacher model to get teacher output distributions
+    # run batch_in through teacher model to get teacher output distributions
     mbase.eval()
     q.batch_reset(mbase)
     with torch.no_grad():
@@ -405,6 +362,50 @@ def train_batch_distill(batch=None, model=None, optim=None, losses=None, device=
                 )
 
     [e() for e in on_end]
+    return ttmsg
+
+
+def train_epoch_distill(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock("-"),
+             current_epoch=0, max_epochs=0, _train_batch=train_batch_distill, on_start=tuple(), on_end=tuple(), run=False,
+             mbase=None):
+    """
+    Performs an epoch of training on given model, with data from given dataloader, using given optimizer,
+    with loss computed based on given losses.
+    :param model:
+    :param dataloader:
+    :param optim:
+    :param losses:  list of loss wrappers
+    :param device:  device to put batches on
+    :param tt:
+    :param current_epoch:
+    :param max_epochs:
+    :param _train_batch:    train batch function, default is train_batch
+    :param on_start:
+    :param on_end:
+    :return:
+    """
+    # if run is False:
+    #     kwargs = locals().copy()
+    #     return partial(train_epoch, **kwargs)
+
+    for loss in losses:
+        loss.push_epoch_to_history(epoch=current_epoch-1)
+        loss.reset_agg()
+
+    [e() for e in on_start]
+
+    q.epoch_reset(model)
+    q.epoch_reset(mbase)
+
+    for i, _batch in enumerate(dataloader):
+        ttmsg = _train_batch(batch=_batch, model=model, optim=optim, losses=losses, device=device,
+                             batch_number=i, max_batches=len(dataloader), current_epoch=current_epoch, max_epochs=max_epochs,
+                             run=True, mbase=mbase)
+        tt.live(ttmsg)
+
+    tt.stoplive()
+    [e() for e in on_end]
+    ttmsg = q.pp_epoch_losses(*losses)
     return ttmsg
 
 
