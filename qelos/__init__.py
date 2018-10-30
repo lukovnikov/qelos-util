@@ -5,3 +5,4 @@ from qelos.util import *
 from qelos.exceptions import *
 from qelos.rnn import *
 from qelos.train import *
+from qelos.loss import *

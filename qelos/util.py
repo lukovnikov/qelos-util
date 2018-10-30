@@ -23,7 +23,7 @@ from torch.utils.data import Dataset, DataLoader
 __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_unpack", "iscuda", "hyperparam", "v",
            "intercat", "masked_mean", "tensor_dataset", "datacat", "dataload", "datasplit",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
-           "StringMatrix", "tokenize", "recmap"]
+           "StringMatrix", "tokenize", "recmap", "inf_batches"]
 
 # region torch-related utils
 def copy_params(source, target):
@@ -167,6 +167,22 @@ def masked_mean(x, dim=None, mask=None, keepdim=False):
 
 
 # region data-related utils
+def inf_batches(dataloader, with_info=True):
+    """
+    iteration over this produces infinite batches from the dataloader
+    returns <batch_data>, (<batch_number>, <epoch_number>) if with_info=True
+        else just <batch_data>
+    """
+    epoch = 0
+    while True:
+        for i, _batch in enumerate(dataloader):
+            if with_info:
+                yield _batch, (i, epoch)
+            else:
+                yield _batch
+        epoch += 1
+
+
 def tensor_dataset(*x):
     """ Creates a torch TensorDataset from list of tensors
         :param x: tensors as numpy arrays or torch tensors

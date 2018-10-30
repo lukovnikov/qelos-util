@@ -11,7 +11,49 @@ EPS = 1e-6
 
 
 __all__ = ["Accuracy", "SeqAccuracy", "SeqElemAccuracy", "MacroBLEU",
-           "SmoothedCELoss", "CELoss", "DistillLoss"]
+           "SmoothedCELoss", "CELoss", "DistillLoss", "LinearLoss", "SelectedLinearLoss"]
+
+
+class LinearLoss(torch.nn.Module):
+    """ LinearLoss or NoLoss. Use this if model returns loss """
+    def __init__(self, reduction="elementwise_mean"):
+        super(LinearLoss, self).__init__()
+        self.reduction = reduction
+
+    def forward(self, x, gold, **kw):
+        """ x is minimized, gold is ignored (and should be None) """
+        if self.reduction == "elementwise_mean":
+            ret = x.mean()
+        elif self.reduction == "sum":
+            ret = x.sum()
+        else:
+            ret = x
+        return ret
+
+
+class SelectedLinearLoss(torch.nn.Module):
+    """ Same as LinearLoss, but with selection from tuple of outputs from model (that specifies losses)
+        To be used to output multiple losses from the model/ select one model output as training loss
+    """
+    def __init__(self, which, reduction="elementwise_mean", **kw):
+        super(SelectedLinearLoss, self).__init__(**kw)
+        self.which = which
+        self.reduction = reduction
+
+    def forward(self, model_outs, gold, **kw):
+        if q.issequence(model_outs):
+            x = model_outs[self.which]
+        else:
+            assert(self.which == 0)
+            x = model_outs
+
+        if self.reduction == "elementwise_mean":
+            ret = x.mean()
+        elif self.reduction == "sum":
+            ret = x.sum()
+        else:
+            ret = x
+        return ret
 
 
 def logsumexp(x, axis=-1):
@@ -56,6 +98,8 @@ class DiscreteLoss(torch.nn.Module):
 
     @staticmethod
     def get_ignore_mask(gold, ignore_indices):
+        if not q.issequence(ignore_indices):
+            ignore_indices = [ignore_indices]
         mask = None     # (batsize,)
         if ignore_indices is not None:
             for ignore in ignore_indices:
@@ -173,7 +217,7 @@ class MacroBLEU(DiscreteLoss):      # TODO take end of sequence token into accou
 
 class CELoss(torch.nn.Module):
     """ Cross entropy loss. """
-    def __init__(self, weight=None, reduction="elementwise_mean", ignore_index=None, mode="logits", **kw):
+    def __init__(self, weight=None, reduction="elementwise_mean", ignore_index=-100, mode="logits", **kw):
         super(CELoss, self).__init__(**kw)
         self.mode = mode
         if mode in ("logprobs", "probs"):
@@ -183,15 +227,18 @@ class CELoss(torch.nn.Module):
         else:
             raise q.SumTingWongException("unknown mode {}".format(mode))
 
-    def forward(self, probs, gold):
-        logprobs = torch.log(probs) if self.mode == "probs" else probs
+    def forward(self, probs, gold):     # (batsize, ..., vocsize), (batsize, ...)
+        logprobs = probs if self.mode != "probs" else torch.log(probs)
+        if logprobs.dim() > 2:
+            permaxis = [0, logprobs.dim()-1] + list(range(1, logprobs.dim()-1))
+            logprobs = logprobs.permute(*permaxis)    # (batsize, vocsize, ...)
         ret = self.ce(logprobs, gold)
         return ret
 
 
 class SmoothedCELoss(torch.nn.Module):
     """ CrossEntropyLoss with label smoothing. """
-    def __init__(self, reduction="elementwise_mean", ignore_index=None, smoothing=0., mode="logits", **kw):
+    def __init__(self, reduction="elementwise_mean", ignore_index=-100, smoothing=0., mode="logits", **kw):
         super(SmoothedCELoss, self).__init__(**kw)
         self.reduction, self.ignore_indices, self.smoothing = reduction, ignore_index, smoothing
         self.mode = mode        # "logits", "probs", "logprobs"
@@ -211,14 +258,14 @@ class SmoothedCELoss(torch.nn.Module):
         prob_mask_weights = lsv / prob_mask.sum(-1, keepdim=True)
         _gold = torch.ones_like(probs) * prob_mask_weights * prob_mask
         _gold.scatter_(-1, gold.unsqueeze(-1), (1 - lsv) + prob_mask_weights)   # (batsize, ..., vocsize) probs
-        assert((_gold.sum(-1) - torch.ones_like(gold)).norm().item() < 1e-5)
+        assert((_gold.sum(-1) - torch.ones_like(gold).float()).norm().item() < 1e-5)
 
         logprobs = self.sm(probs) if self.mode == "logits" else (probs if self.mode == "logprobs" else torch.log(probs))
         kl_divs = self.kl(logprobs, _gold)
         # kl_divs = inf2zero(kl_divs)
         kl_div = kl_divs.sum(-1)        # (batsize, ...) kl div per element
 
-        mask = DiscreteLoss.get_ignore_mask(gold, self.ignore_indices)
+        mask = DiscreteLoss.get_ignore_mask(gold, self.ignore_indices).float()
         kl_div = kl_div * mask
         ret = kl_div.sum()
         if self.reduction == "elementwise_mean":
@@ -231,12 +278,12 @@ class SmoothedCELoss(torch.nn.Module):
 
 class DistillLoss(torch.nn.Module):
     """ Distillation (KD) loss for sequences of categorical distributions """
-    def __init__(self, weight=None, reduction="elementwise_mean", ignore_index=None,
+    def __init__(self, weight=None, reduction="elementwise_mean", ignore_index=-100,
                  temperature=1., mixture=0.5, **kw):
         """
         :param ignore_index:    gold ids whose time steps will be ignored
         :param temperature:     softmax temperature (!: will not be applied if soft_gold_mode is not "logits")
-        :param mixture:         mixing portion of soft and hard gold
+        :param mixture:         mixing portion of soft and hard gold (1 => only kl, 0 => only ce)
         :param kw:
         """
         super(DistillLoss, self).__init__(**kw)
@@ -246,10 +293,10 @@ class DistillLoss(torch.nn.Module):
         self.mixture = mixture
         self.sm = torch.nn.Softmax(-1)
         self.logsm = torch.nn.LogSoftmax(-1)
-        self.hardCE = torch.nn.CrossEntropyLoss(reduction="none", ignore_index=ignore_index, weight=weight)
+        self.hardCE = CELoss(reduction="none", ignore_index=ignore_index, weight=weight, mode="logits")
         self.kl = torch.nn.KLDivLoss(reduction="none")
 
-    def _forward(self, probs, gold):
+    def forward(self, probs, gold):
         """
         :param probs:       (batsize, ..., numsym) prediction vector of logits
         :param gold:        tuple of (batsize, ..., numsym) soft gold logits and (batsize, ...) ints for hard gold
@@ -277,7 +324,7 @@ class DistillLoss(torch.nn.Module):
         # mix
         loss = mix * kl_div + (1 - mix) * hard_ce        # (batsize, seqlen)
 
-        mask = DiscreteLoss.get_ignore_mask(hardgold, self.ignore_indices)
+        mask = DiscreteLoss.get_ignore_mask(hardgold, self.ignore_indices).float()
         loss = loss * mask
         ret = loss.sum()
         if self.reduction == "elementwise_mean":
