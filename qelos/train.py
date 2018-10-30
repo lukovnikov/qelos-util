@@ -238,7 +238,7 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
     epoch_reset(model)
 
     for i, _batch in enumerate(dataloader):
-        ttmsg = _train_batch(_batch, model, optim, losses, device=device,
+        ttmsg = _train_batch(_batch=_batch, model=model, optim=optim, losses=losses, device=device,
                              batch_number=i, max_batches=len(dataloader), current_epoch=current_epoch, max_epochs=max_epochs,
                              run=True)
         tt.live(ttmsg)
@@ -253,7 +253,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
             current_epoch=0, max_epochs=0,
             on_start=tuple(), on_start_batch=tuple(), on_end_batch=tuple(), on_end=tuple(), run=False):
     """
-    Performs a test epoch.
+    Performs a test epoch. If run=True, runs, otherwise returns partially filled function.
     :param model:
     :param dataloader:
     :param losses:
