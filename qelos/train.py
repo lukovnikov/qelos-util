@@ -324,7 +324,7 @@ def run_training(run_train_epoch=None, run_valid_epoch=None, max_epochs=1, valid
     while stop_training is not True:
         tt.tick()
         ttmsg = run_train_epoch(current_epoch=current_epoch, max_epochs=max_epochs)
-        ttmsg = "Epoch {}/{} -- {}".format(current_epoch, max_epochs, ttmsg)
+        ttmsg = "Epoch {}/{} -- {}".format(current_epoch+1, max_epochs, ttmsg)
         validepoch = False
         if run_valid_epoch is not None and validinter_count % validinter == 0:
             ttmsg_v = run_valid_epoch(current_epoch=current_epoch, max_epochs=max_epochs)
@@ -333,7 +333,8 @@ def run_training(run_train_epoch=None, run_valid_epoch=None, max_epochs=1, valid
         validinter_count += 1
         if not print_on_valid_only or validepoch:
             tt.tock(ttmsg)
-        stop_training = current_epoch == max_epochs
+        current_epoch += 1
+        stop_training = current_epoch >= max_epochs
 
 
 # endregion
