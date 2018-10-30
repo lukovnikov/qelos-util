@@ -2,6 +2,7 @@ import qelos as q
 import torch
 import numpy as np
 from IPython import embed
+from functools import partial
 
 
 __all__ = ["batch_reset", "epoch_reset", "LossWrapper", "train_batch", "train_epoch", "test_epoch", "run_training"]
@@ -134,9 +135,9 @@ def eval_loop(model, dataloader, device=torch.device("cpu")):
     return out
 
 
-def train_batch(_batch, model=None, optim=None, losses=None, device=torch.device("cpu"),
+def train_batch(_batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
                 batch_number=-1, max_batches=0, current_epoch=0, max_epochs=0,
-                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple()):
+                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(), _retpartial=False):
     """
     Runs a single batch of SGD on provided batch and settings.
     :param _batch:  batch to run on
@@ -154,10 +155,12 @@ def train_batch(_batch, model=None, optim=None, losses=None, device=torch.device
     :param on_end:              collection of functions to call when batch is done
     :return:
     """
-    """
-    performs a single batch of SGD on the provided batch
-    with configured model, dataloader and optimizer
-    """
+    if _retpartial:
+        kwargs = locals()
+        kwargs["_retpartial"] = False
+        ret = partial(train_batch, **kwargs)
+        return ret
+
     [e() for e in on_start]
     optim.zero_grad()
     model.train()
@@ -207,7 +210,7 @@ def train_batch(_batch, model=None, optim=None, losses=None, device=torch.device
 
 
 def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock("-"),
-             current_epoch=0, max_epochs=0, _train_batch=train_batch, on_start=tuple(), on_end=tuple()):
+             current_epoch=0, max_epochs=0, _train_batch=train_batch, on_start=tuple(), on_end=tuple(), _retpartial=False):
     """
     Performs an epoch of training on given model, with data from given dataloader, using given optimizer,
     with loss computed based on given losses.
@@ -224,6 +227,12 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
     :param on_end:
     :return:
     """
+    if _retpartial:
+        kwargs = locals()
+        kwargs["_retpartial"] = False
+        ret = partial(train_batch, **kwargs)
+        return ret
+
     for loss in losses:
         loss.push_epoch_to_history(epoch=current_epoch-1)
         loss.reset_agg()
@@ -245,7 +254,7 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
 
 def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cpu"),
             current_epoch=0, max_epochs=0,
-            on_start=tuple(), on_start_batch=tuple(), on_end_batch=tuple(), on_end=tuple()):
+            on_start=tuple(), on_start_batch=tuple(), on_end_batch=tuple(), on_end=tuple(), _retpartial=False):
     """
     Performs a test epoch.
     :param model:
@@ -260,6 +269,12 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
     :param on_end:
     :return:
     """
+    if _retpartial:
+        kwargs = locals()
+        kwargs["_retpartial"] = False
+        ret = partial(train_batch, **kwargs)
+        return ret
+
     tt = q.ticktock("-")
     model.eval()
     epoch_reset(model)
