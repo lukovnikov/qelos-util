@@ -276,13 +276,13 @@ def run(lr=20.,
 
     optim = torch.optim.SGD(m.parameters(), lr=lr)
 
-    train_batch_f = partial(q.train_batch,
+    train_batch_f = partial(train_batch_distill,
                             on_before_optim_step=[lambda: torch.nn.utils.clip_grad_norm_(m.parameters(), gradnorm)])
     lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1 / 4, patience=0, verbose=True)
     lrp_f = lambda: lrp.step(validloss.get_epoch_error())
 
-    train_epoch_f = partial(q.train_epoch, model=ms, dataloader=train_batches, optim=optim, losses=[loss],
-                            device=device, _train_batch=train_batch_f)
+    train_epoch_f = partial(train_epoch_distill, model=ms, dataloader=train_batches, optim=optim, losses=[loss],
+                            device=device, _train_batch=train_batch_f, mbase=m)
     valid_epoch_f = partial(q.test_epoch, model=ms, dataloader=valid_batches, losses=validlosses, device=device,
                             on_end=[lrp_f])
 
