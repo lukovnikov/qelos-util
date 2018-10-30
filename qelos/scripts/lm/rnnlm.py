@@ -238,7 +238,8 @@ def run(lr=20.,
     tt.tock("trained")
 
     tt.tick("testing")
-    q.test_epoch(model=m, dataloader=test_batches, losses=testlosses, device=device)
+    result = q.test_epoch(model=m, dataloader=test_batches, losses=testlosses, device=device)
+    print(result)
     tt.tock("tested")
 
 

@@ -157,7 +157,7 @@ def train_batch(_batch=None, model=None, optim=None, losses=None, device=torch.d
     """
     if _retpartial:
         kwargs = locals()
-        kwargs["_retpartial"] = False
+        kwargs["_retpartial"] = False; del kwargs["kwargs"]
         ret = partial(train_batch, **kwargs)
         return ret
 
@@ -229,7 +229,7 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
     """
     if _retpartial:
         kwargs = locals()
-        kwargs["_retpartial"] = False
+        kwargs["_retpartial"] = False; del kwargs["kwargs"]
         ret = partial(train_batch, **kwargs)
         return ret
 
@@ -271,7 +271,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
     """
     if _retpartial:
         kwargs = locals()
-        kwargs["_retpartial"] = False
+        kwargs["_retpartial"] = False; del kwargs["kwargs"]
         ret = partial(train_batch, **kwargs)
         return ret
 
