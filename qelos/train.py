@@ -5,7 +5,8 @@ from IPython import embed
 from functools import partial
 
 
-__all__ = ["batch_reset", "epoch_reset", "LossWrapper", "train_batch", "train_epoch", "test_epoch", "run_training"]
+__all__ = ["batch_reset", "epoch_reset", "LossWrapper", "BestSaver",
+           "train_batch", "train_epoch", "test_epoch", "run_training"]
 
 
 def batch_reset(module):        # performs all resetting operations on module before using it in the next batch
@@ -348,3 +349,41 @@ def run_training(run_train_epoch=None, run_valid_epoch=None, max_epochs=1, valid
 
 
 # endregion
+
+
+class BestSaver(object):
+    def __init__(self, criterion, model, path, higher_is_better=True, autoload=False,
+                 verbose=False, **kw):
+        super(BestSaver, self).__init__(**kw)
+        self.criterion = criterion
+        self.model = model
+        self.path = path
+        self.higher_better = 1. if higher_is_better else -1.
+        self.best_criterion = -np.infty if higher_is_better else np.infty
+        self.verbose = verbose
+        self.callbacks = {}
+        self.autoload = autoload        # automatically load on END event
+
+    # def get_hooks(self, ee):
+    #     hooks = {ee.END_EPOCH: self.save_best_model}
+    #     if self.autoload:
+    #         hooks[ee.END] = self.autoload_best
+    #     return hooks
+
+    def save_best_model(self):
+        # assert isinstance(trainer, train)
+        current_criterion = self.criterion()
+        decision_value = current_criterion - self.best_criterion    # positive if current is higher
+        decision_value *= self.higher_better            # higher better --> positive is higher = better
+        # remark: with this way, later can extend to specifying by how much it should improve --> TODO
+        if decision_value > 0:
+            if self.verbose:
+                print("Validation criterion improved from {} to {}. Saving model..."\
+                      .format(self.best_criterion, current_criterion))
+            self.best_criterion = current_criterion
+            torch.save(self.model.state_dict(), self.path)
+
+    def autoload_best(self):
+        if self.verbose:
+            print("Reloading best weights ({})".format(self.best_criterion))
+        self.model.load_state_dict(torch.load(self.path))

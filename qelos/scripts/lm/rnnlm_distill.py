@@ -186,12 +186,15 @@ def run(lr=20.,
         encdim=200,
         numlayers=2,
         tieweights=False,
+        distill="rnnlm",        # "rnnlm", "glove"
         seqlen=35,
         batsize=20,
         eval_batsize=80,
         cuda=False,
         gpu=0,
-        test=False
+        test=False,
+        repretrain=False,       # retrain base model instead of loading it
+        savepath="none",        # where to save after training
         ):
     tt = q.ticktock("script")
     device = torch.device("cpu")
@@ -204,47 +207,56 @@ def run(lr=20.,
     tt.tock("data loaded")
     print("{} batches in train".format(len(train_batches)))
 
-    tt.tick("creating model")
-    dims = [embdim] + ([encdim] * numlayers)
+    if os.path.exists(savepath) and repretrain is False:
+        tt.tick("reloading base model")
+        with open(savepath, "rb") as f:
+            m = torch.load(f)
+        tt.tock("reloaded base model")
+    else:
+        tt.tick("preparing training base")
+        dims = [embdim] + ([encdim] * numlayers)
 
-    m = RNNLayer_LM(*dims, worddic=D, dropout=dropout, tieweights=tieweights).to(device)
+        m = RNNLayer_LM(*dims, worddic=D, dropout=dropout, tieweights=tieweights).to(device)
 
-    if test:
-        for i, batch in enumerate(train_batches):
-            y = m(batch[0])
-            if i > 5:
-                break
-        print(y.size())
+        if test:
+            for i, batch in enumerate(train_batches):
+                y = m(batch[0])
+                if i > 5:
+                    break
+            print(y.size())
 
-    loss = q.LossWrapper(q.CELoss(mode="logits"))
-    validloss = q.LossWrapper(q.CELoss(mode="logits"))
-    validlosses = [validloss, PPLfromCE(validloss)]
-    testloss = q.LossWrapper(q.CELoss(mode="logits"))
-    testlosses = [testloss, PPLfromCE(testloss)]
+        loss = q.LossWrapper(q.CELoss(mode="logits"))
+        validloss = q.LossWrapper(q.CELoss(mode="logits"))
+        validlosses = [validloss, PPLfromCE(validloss)]
+        testloss = q.LossWrapper(q.CELoss(mode="logits"))
+        testlosses = [testloss, PPLfromCE(testloss)]
 
-    for l in [loss] + validlosses + testlosses:   # put losses on right device
-        l.loss.to(device)
+        for l in [loss] + validlosses + testlosses:   # put losses on right device
+            l.loss.to(device)
 
-    optim = torch.optim.SGD(m.parameters(), lr=lr)
+        optim = torch.optim.SGD(m.parameters(), lr=lr)
 
-    train_batch_f = partial(q.train_batch, on_before_optim_step=[lambda: torch.nn.utils.clip_grad_norm_(m.parameters(), gradnorm)])
-    lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1 / 4, patience=0, verbose=True)
-    lrp_f = lambda: lrp.step(validloss.get_epoch_error())
+        train_batch_f = partial(q.train_batch, on_before_optim_step=[lambda: torch.nn.utils.clip_grad_norm_(m.parameters(), gradnorm)])
+        lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1 / 4, patience=0, verbose=True)
+        lrp_f = lambda: lrp.step(validloss.get_epoch_error())
 
-    train_epoch_f = partial(q.train_epoch, model=m, dataloader=train_batches, optim=optim, losses=[loss],
-                            device=device, _train_batch=train_batch_f)
-    valid_epoch_f = partial(q.test_epoch, model=m, dataloader=valid_batches, losses=validlosses, device=device,
-                            on_end=[lrp_f])
+        train_epoch_f = partial(q.train_epoch, model=m, dataloader=train_batches, optim=optim, losses=[loss],
+                                device=device, _train_batch=train_batch_f)
+        valid_epoch_f = partial(q.test_epoch, model=m, dataloader=valid_batches, losses=validlosses, device=device,
+                                on_end=[lrp_f])
 
-    tt.tock("created model")
-    tt.tick("training")
-    q.run_training(train_epoch_f, valid_epoch_f, max_epochs=epochs, validinter=1)
-    tt.tock("trained")
+        tt.tock("prepared training base")
+        tt.tick("training base model")
+        q.run_training(train_epoch_f, valid_epoch_f, max_epochs=epochs, validinter=1)
+        tt.tock("trained base model")
 
     tt.tick("testing")
     testresults = q.test_epoch(model=m, dataloader=test_batches, losses=testlosses, device=device)
     print(testresults)
     tt.tock("tested")
+
+    if open(savepath, "wb") as f:
+        torch.save(m, f)
 
 
 
