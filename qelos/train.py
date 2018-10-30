@@ -137,7 +137,7 @@ def eval_loop(model, dataloader, device=torch.device("cpu")):
 
 def train_batch(_batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
                 batch_number=-1, max_batches=0, current_epoch=0, max_epochs=0,
-                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(), _retpartial=False):
+                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(), run=False):
     """
     Runs a single batch of SGD on provided batch and settings.
     :param _batch:  batch to run on
@@ -155,11 +155,9 @@ def train_batch(_batch=None, model=None, optim=None, losses=None, device=torch.d
     :param on_end:              collection of functions to call when batch is done
     :return:
     """
-    if _retpartial:
-        kwargs = locals()
-        kwargs["_retpartial"] = False; del kwargs["kwargs"]
-        ret = partial(train_batch, **kwargs)
-        return ret
+    if run is False:
+        kwargs = locals().copy()
+        return partial(train_batch, **kwargs)
 
     [e() for e in on_start]
     optim.zero_grad()
@@ -210,7 +208,7 @@ def train_batch(_batch=None, model=None, optim=None, losses=None, device=torch.d
 
 
 def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock("-"),
-             current_epoch=0, max_epochs=0, _train_batch=train_batch, on_start=tuple(), on_end=tuple(), _retpartial=False):
+             current_epoch=0, max_epochs=0, _train_batch=train_batch, on_start=tuple(), on_end=tuple(), run=False):
     """
     Performs an epoch of training on given model, with data from given dataloader, using given optimizer,
     with loss computed based on given losses.
@@ -227,11 +225,9 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
     :param on_end:
     :return:
     """
-    if _retpartial:
-        kwargs = locals()
-        kwargs["_retpartial"] = False; del kwargs["kwargs"]
-        ret = partial(train_batch, **kwargs)
-        return ret
+    if run is False:
+        kwargs = locals().copy()
+        return partial(train_epoch, **kwargs)
 
     for loss in losses:
         loss.push_epoch_to_history(epoch=current_epoch-1)
@@ -243,7 +239,8 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
 
     for i, _batch in enumerate(dataloader):
         ttmsg = _train_batch(_batch, model, optim, losses, device=device,
-                            batch_number=i, max_batches=len(dataloader), current_epoch=current_epoch, max_epochs=max_epochs)
+                             batch_number=i, max_batches=len(dataloader), current_epoch=current_epoch, max_epochs=max_epochs,
+                             run=True)
         tt.live(ttmsg)
 
     tt.stoplive()
@@ -254,7 +251,7 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
 
 def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cpu"),
             current_epoch=0, max_epochs=0,
-            on_start=tuple(), on_start_batch=tuple(), on_end_batch=tuple(), on_end=tuple(), _retpartial=False):
+            on_start=tuple(), on_start_batch=tuple(), on_end_batch=tuple(), on_end=tuple(), run=False):
     """
     Performs a test epoch.
     :param model:
@@ -269,11 +266,9 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
     :param on_end:
     :return:
     """
-    if _retpartial:
-        kwargs = locals()
-        kwargs["_retpartial"] = False; del kwargs["kwargs"]
-        ret = partial(train_batch, **kwargs)
-        return ret
+    if run is False:
+        kwargs = locals().copy()
+        return partial(test_epoch, **kwargs)
 
     tt = q.ticktock("-")
     model.eval()
@@ -338,11 +333,11 @@ def run_training(run_train_epoch=None, run_valid_epoch=None, max_epochs=1, valid
     stop_training = current_epoch >= max_epochs
     while stop_training is not True:
         tt.tick()
-        ttmsg = run_train_epoch(current_epoch=current_epoch, max_epochs=max_epochs)
+        ttmsg = run_train_epoch(current_epoch=current_epoch, max_epochs=max_epochs, run=True)
         ttmsg = "Epoch {}/{} -- {}".format(current_epoch+1, max_epochs, ttmsg)
         validepoch = False
         if run_valid_epoch is not None and validinter_count % validinter == 0:
-            ttmsg_v = run_valid_epoch(current_epoch=current_epoch, max_epochs=max_epochs)
+            ttmsg_v = run_valid_epoch(current_epoch=current_epoch, max_epochs=max_epochs, run=True)
             ttmsg += " -- " + ttmsg_v
             validepoch = True
         validinter_count += 1
