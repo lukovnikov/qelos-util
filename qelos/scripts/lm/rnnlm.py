@@ -175,16 +175,16 @@ class PPLfromCE(q.LossWrapper):
         return math.exp(self.celosswrapper.get_epoch_error())
 
 
-def run(lr=30.,
+def run(lr=20.,
         dropout=0.2,
         dropconnect=0.2,
         gradnorm=0.25,
         epochs=25,
-        embdim = 400,
-        encdim = 1150,
-        numlayers = 3,
-        seqlen=20,
-        batsize=8,
+        embdim = 200,
+        encdim = 200,
+        numlayers = 2,
+        seqlen=35,
+        batsize=20,
         eval_batsize=80,
         cuda=False,
         gpu=0,
