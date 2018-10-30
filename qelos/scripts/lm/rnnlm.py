@@ -197,7 +197,7 @@ def run(lr=20.,
     tt.tick("loading data")
     train_batches, valid_batches, test_batches, D = \
         load_data(batsize=batsize, eval_batsize=eval_batsize,
-                  seqlen=VariableSeqlen(minimum=5, maximum_offset=10, mu=seqlen, sigma=5))
+                  seqlen=VariableSeqlen(minimum=5, maximum_offset=10, mu=seqlen, sigma=0))
     tt.tock("data loaded")
     print("{} batches in train".format(len(train_batches)))
 
