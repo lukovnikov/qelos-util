@@ -5,7 +5,7 @@ from IPython import embed
 from functools import partial
 
 
-__all__ = ["batch_reset", "epoch_reset", "LossWrapper", "BestSaver",
+__all__ = ["batch_reset", "epoch_reset", "LossWrapper", "BestSaver", "no_gold", "pp_epoch_losses",
            "train_batch", "train_epoch", "test_epoch", "run_training"]
 
 
@@ -136,12 +136,12 @@ def eval_loop(model, dataloader, device=torch.device("cpu")):
     return out
 
 
-def train_batch(_batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
+def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
                 batch_number=-1, max_batches=0, current_epoch=0, max_epochs=0,
                 on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(), run=False):
     """
     Runs a single batch of SGD on provided batch and settings.
-    :param _batch:  batch to run on
+    :param batch:  batch to run on
     :param model:   torch.nn.Module of the model
     :param optim:       torch optimizer
     :param losses:      list of losswrappers
@@ -164,18 +164,17 @@ def train_batch(_batch=None, model=None, optim=None, losses=None, device=torch.d
     optim.zero_grad()
     model.train()
 
-    _batch = (_batch,) if not q.issequence(_batch) else _batch
-    _batch = q.recmap(_batch, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
-    batch = _batch
+    batch = (batch,) if not q.issequence(batch) else batch
+    batch = q.recmap(batch, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
 
-    if no_gold(losses):
+    if q.no_gold(losses):
         batch_in = batch
         gold = None
     else:
         batch_in = batch[:-1]
         gold = batch[-1]
 
-    batch_reset(model)
+    q.batch_reset(model)
     modelouts = model(*batch_in)
 
     trainlosses = []
@@ -201,7 +200,7 @@ def train_batch(_batch=None, model=None, optim=None, losses=None, device=torch.d
                 max_epochs,
                 batch_number+1,
                 max_batches,
-                pp_epoch_losses(*losses),
+                q.pp_epoch_losses(*losses),
                 )
 
     [e() for e in on_end]
@@ -209,7 +208,7 @@ def train_batch(_batch=None, model=None, optim=None, losses=None, device=torch.d
 
 
 def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock("-"),
-             current_epoch=0, max_epochs=0, _train_batch=train_batch, on_start=tuple(), on_end=tuple(), run=False):
+             current_epoch=0, max_epochs=0, _train_batch=q.train_batch, on_start=tuple(), on_end=tuple(), run=False):
     """
     Performs an epoch of training on given model, with data from given dataloader, using given optimizer,
     with loss computed based on given losses.
@@ -236,17 +235,17 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
 
     [e() for e in on_start]
 
-    epoch_reset(model)
+    q.epoch_reset(model)
 
     for i, _batch in enumerate(dataloader):
-        ttmsg = _train_batch(_batch=_batch, model=model, optim=optim, losses=losses, device=device,
+        ttmsg = _train_batch(batch=_batch, model=model, optim=optim, losses=losses, device=device,
                              batch_number=i, max_batches=len(dataloader), current_epoch=current_epoch, max_epochs=max_epochs,
                              run=True)
         tt.live(ttmsg)
 
     tt.stoplive()
     [e() for e in on_end]
-    ttmsg = pp_epoch_losses(*losses)
+    ttmsg = q.pp_epoch_losses(*losses)
     return ttmsg
 
 
@@ -273,7 +272,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
 
     tt = q.ticktock("-")
     model.eval()
-    epoch_reset(model)
+    q.epoch_reset(model)
     [e() for e in on_start]
     with torch.no_grad():
         for loss_obj in losses:
@@ -293,7 +292,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
                 batch_in = batch[:-1]
                 gold = batch[-1]
 
-            batch_reset(model)
+            q.batch_reset(model)
             modelouts = model(*batch_in)
 
             testlosses = []
@@ -307,13 +306,13 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
                 max_epochs,
                 i + 1,
                 len(dataloader),
-                pp_epoch_losses(*losses)
+                q.pp_epoch_losses(*losses)
             )
             )
             [e() for e in on_end_batch]
     tt.stoplive()
     [e() for e in on_end]
-    ttmsg = pp_epoch_losses(*losses)
+    ttmsg = q.pp_epoch_losses(*losses)
     return ttmsg
 
 

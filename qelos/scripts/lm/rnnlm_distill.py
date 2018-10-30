@@ -194,7 +194,7 @@ def run(lr=20.,
         gpu=0,
         test=False,
         repretrain=False,       # retrain base model instead of loading it
-        savepath="none",        # where to save after training
+        savepath="rnnlm.base.pt",        # where to save after training
         ):
     tt = q.ticktock("script")
     device = torch.device("cpu")
@@ -207,6 +207,7 @@ def run(lr=20.,
     tt.tock("data loaded")
     print("{} batches in train".format(len(train_batches)))
 
+    # region base training
     if os.path.exists(savepath) and repretrain is False:
         tt.tick("reloading base model")
         with open(savepath, "rb") as f:
@@ -250,15 +251,161 @@ def run(lr=20.,
         q.run_training(train_epoch_f, valid_epoch_f, max_epochs=epochs, validinter=1)
         tt.tock("trained base model")
 
-    tt.tick("testing")
+        with open(savepath, "wb") as f:
+            torch.save(m, f)
+
+    tt.tick("testing base model")
     testresults = q.test_epoch(model=m, dataloader=test_batches, losses=testlosses, device=device)
     print(testresults)
-    tt.tock("tested")
+    tt.tock("tested base model")
+    # endregion
 
-    if open(savepath, "wb") as f:
+    # region distillation
+    tt.tick("preparing training student")
+    dims = [embdim] + ([encdim] * numlayers)
+    ms = RNNLayer_LM(*dims, worddic=D, dropout=dropout, tieweights=tieweights).to(device)
+
+    loss = q.LossWrapper(q.DistillLoss(temperature=2., mode="logits"))
+    validloss = q.LossWrapper(q.CELoss(mode="logits"))
+    validlosses = [validloss, PPLfromCE(validloss)]
+    testloss = q.LossWrapper(q.CELoss(mode="logits"))
+    testlosses = [testloss, PPLfromCE(testloss)]
+
+    for l in [loss] + validlosses + testlosses:  # put losses on right device
+        l.loss.to(device)
+
+    optim = torch.optim.SGD(m.parameters(), lr=lr)
+
+    train_batch_f = partial(q.train_batch,
+                            on_before_optim_step=[lambda: torch.nn.utils.clip_grad_norm_(m.parameters(), gradnorm)])
+    lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1 / 4, patience=0, verbose=True)
+    lrp_f = lambda: lrp.step(validloss.get_epoch_error())
+
+    train_epoch_f = partial(q.train_epoch, model=ms, dataloader=train_batches, optim=optim, losses=[loss],
+                            device=device, _train_batch=train_batch_f)
+    valid_epoch_f = partial(q.test_epoch, model=ms, dataloader=valid_batches, losses=validlosses, device=device,
+                            on_end=[lrp_f])
+
+    tt.tock("prepared training base")
+    tt.tick("training base model")
+    q.run_training(train_epoch_f, valid_epoch_f, max_epochs=epochs, validinter=1)
+    tt.tock("trained base model")
+
+    with open(savepath, "wb") as f:
         torch.save(m, f)
+    # endregion
 
 
+def train_epoch_distill(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock("-"),
+             current_epoch=0, max_epochs=0, on_start=tuple(), on_end=tuple(), run=False,
+             mbase=None):
+    """
+    Performs an epoch of training on given model, with data from given dataloader, using given optimizer,
+    with loss computed based on given losses.
+    :param model:
+    :param dataloader:
+    :param optim:
+    :param losses:  list of loss wrappers
+    :param device:  device to put batches on
+    :param tt:
+    :param current_epoch:
+    :param max_epochs:
+    :param _train_batch:    train batch function, default is train_batch
+    :param on_start:
+    :param on_end:
+    :return:
+    """
+    # if run is False:
+    #     kwargs = locals().copy()
+    #     return partial(train_epoch, **kwargs)
+
+    for loss in losses:
+        loss.push_epoch_to_history(epoch=current_epoch-1)
+        loss.reset_agg()
+
+    [e() for e in on_start]
+
+    q.epoch_reset(model)
+
+    for i, _batch in enumerate(dataloader):
+        ttmsg = train_batch_distill(_batch=_batch, model=model, optim=optim, losses=losses, device=device,
+                             batch_number=i, max_batches=len(dataloader), current_epoch=current_epoch, max_epochs=max_epochs,
+                             run=True, mbase=)
+        tt.live(ttmsg)
+
+    tt.stoplive()
+    [e() for e in on_end]
+    ttmsg = q.pp_epoch_losses(*losses)
+    return ttmsg
+
+
+def train_batch_distill(batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
+                batch_number=-1, max_batches=0, current_epoch=0, max_epochs=0,
+                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(), run=False,
+                mbase=None):
+    """
+    Runs a single batch of SGD on provided batch and settings.
+    :param _batch:  batch to run on
+    :param model:   torch.nn.Module of the model
+    :param optim:       torch optimizer
+    :param losses:      list of losswrappers
+    :param device:      device
+    :param batch_number:    which batch
+    :param max_batches:     total number of batches
+    :param current_epoch:   current epoch
+    :param max_epochs:      total number of epochs
+    :param on_start:        collection of functions to call when starting training batch
+    :param on_before_optim_step:    collection of functions for before optimization step is taken (gradclip)
+    :param on_after_optim_step:     collection of functions for after optimization step is taken
+    :param on_end:              collection of functions to call when batch is done
+    :return:
+    """
+    # if run is False:
+    #     kwargs = locals().copy()
+    #     return partial(train_batch, **kwargs)
+
+    [e() for e in on_start]
+    optim.zero_grad()
+    model.train()
+
+    batch = (batch,) if not q.issequence(batch) else batch
+    batch = q.recmap(batch, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
+
+    batch_in = batch[:-1]
+    gold = batch[-1]
+
+    # TODO: run batch_in through teacher model to get teacher output distributions
+    mbase.eval()
+    q.batch_reset(mbase)
+    with torch.no_grad():
+        softgold = mbase(*batch_in)
+
+    q.batch_reset(model)
+    modelouts = model(*batch_in)
+
+    trainlosses = []
+    for loss_obj in losses:
+        loss_val = loss_obj(modelouts, (softgold, gold))
+        loss_val = [loss_val] if not q.issequence(loss_val) else loss_val
+        trainlosses.extend(loss_val)
+
+    cost = trainlosses[0]
+    cost.backward()
+
+    [e() for e in on_before_optim_step]
+    optim.step()
+    [e() for e in on_after_optim_step]
+
+    ttmsg = "train - Epoch {}/{} - [{}/{}]: {}".format(
+                current_epoch+1,
+                max_epochs,
+                batch_number+1,
+                max_batches,
+                q.pp_epoch_losses(*losses),
+                )
+
+    [e() for e in on_end]
+    return ttmsg
 
 
 if __name__ == '__main__':
