@@ -208,6 +208,15 @@ def run(lr=20.,
     print("{} batches in train".format(len(train_batches)))
 
     # region base training
+    loss = q.LossWrapper(q.CELoss(mode="logits"))
+    validloss = q.LossWrapper(q.CELoss(mode="logits"))
+    validlosses = [validloss, PPLfromCE(validloss)]
+    testloss = q.LossWrapper(q.CELoss(mode="logits"))
+    testlosses = [testloss, PPLfromCE(testloss)]
+
+    for l in [loss] + validlosses + testlosses:   # put losses on right device
+        l.loss.to(device)
+
     if os.path.exists(savepath) and repretrain is False:
         tt.tick("reloading base model")
         with open(savepath, "rb") as f:
@@ -225,15 +234,6 @@ def run(lr=20.,
                 if i > 5:
                     break
             print(y.size())
-
-        loss = q.LossWrapper(q.CELoss(mode="logits"))
-        validloss = q.LossWrapper(q.CELoss(mode="logits"))
-        validlosses = [validloss, PPLfromCE(validloss)]
-        testloss = q.LossWrapper(q.CELoss(mode="logits"))
-        testlosses = [testloss, PPLfromCE(testloss)]
-
-        for l in [loss] + validlosses + testlosses:   # put losses on right device
-            l.loss.to(device)
 
         optim = torch.optim.SGD(m.parameters(), lr=lr)
 
@@ -286,13 +286,15 @@ def run(lr=20.,
     valid_epoch_f = partial(q.test_epoch, model=ms, dataloader=valid_batches, losses=validlosses, device=device,
                             on_end=[lrp_f])
 
-    tt.tock("prepared training base")
-    tt.tick("training base model")
+    tt.tock("prepared training student")
+    tt.tick("training student model")
     q.run_training(train_epoch_f, valid_epoch_f, max_epochs=epochs, validinter=1)
-    tt.tock("trained base model")
+    tt.tock("trained student model")
 
-    with open(savepath, "wb") as f:
-        torch.save(m, f)
+    tt.tick("testing student model")
+    testresults = q.test_epoch(model=m, dataloader=test_batches, losses=testlosses, device=device)
+    print(testresults)
+    tt.tock("tested student model")
     # endregion
 
 
