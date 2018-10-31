@@ -274,10 +274,10 @@ def run(lr=20.,
     for l in [loss] + validlosses + testlosses:  # put losses on right device
         l.loss.to(device)
 
-    optim = torch.optim.SGD(m.parameters(), lr=lr)
+    optim = torch.optim.SGD(ms.parameters(), lr=lr)
 
     train_batch_f = partial(train_batch_distill,
-                            on_before_optim_step=[lambda: torch.nn.utils.clip_grad_norm_(m.parameters(), gradnorm)])
+                            on_before_optim_step=[lambda: torch.nn.utils.clip_grad_norm_(ms.parameters(), gradnorm)])
     lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1 / 4, patience=0, verbose=True)
     lrp_f = lambda: lrp.step(validloss.get_epoch_error())
 
