@@ -265,7 +265,7 @@ def run(lr=20.,
     dims = [embdim] + ([encdim] * numlayers)
     ms = RNNLayer_LM(*dims, worddic=D, dropout=dropout, tieweights=tieweights).to(device)
 
-    loss = q.LossWrapper(q.DistillLoss(temperature=2., mode="logits"))
+    loss = q.LossWrapper(q.DistillLoss(temperature=2.))
     validloss = q.LossWrapper(q.CELoss(mode="logits"))
     validlosses = [validloss, PPLfromCE(validloss)]
     testloss = q.LossWrapper(q.CELoss(mode="logits"))
