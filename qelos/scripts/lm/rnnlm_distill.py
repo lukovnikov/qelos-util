@@ -292,7 +292,7 @@ def run(lr=20.,
     tt.tock("trained student model")
 
     tt.tick("testing student model")
-    testresults = q.test_epoch(model=m, dataloader=test_batches, losses=testlosses, device=device)
+    testresults = q.test_epoch(model=ms, dataloader=test_batches, losses=testlosses, device=device)
     print(testresults)
     tt.tock("tested student model")
     # endregion

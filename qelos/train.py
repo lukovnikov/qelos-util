@@ -317,7 +317,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
 
 
 def run_training(run_train_epoch=None, run_valid_epoch=None, max_epochs=1, validinter=1,
-                 print_on_valid_only=False):
+                 print_on_valid_only=False, check_stop=tuple()):
     """
 
     :param run_train_epoch:     function that performs an epoch of training. must accept current_epoch and max_epochs. Tip: use functools.partial
@@ -344,7 +344,8 @@ def run_training(run_train_epoch=None, run_valid_epoch=None, max_epochs=1, valid
         if not print_on_valid_only or validepoch:
             tt.tock(ttmsg)
         current_epoch += 1
-        stop_training = current_epoch >= max_epochs
+        stop_training = any([e() for e in check_stop])
+        stop_training = stop_training or (current_epoch >= max_epochs)
 
 
 # endregion

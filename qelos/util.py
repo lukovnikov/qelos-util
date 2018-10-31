@@ -23,9 +23,53 @@ from torch.utils.data import Dataset, DataLoader
 __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_unpack", "iscuda", "hyperparam", "v",
            "intercat", "masked_mean", "tensor_dataset", "datacat", "dataload", "datasplit",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
-           "StringMatrix", "tokenize", "recmap", "inf_batches"]
+           "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of"]
 
 # region torch-related utils
+
+def set_lr(m, lr):
+    """ attaches a custom learning rate to passed parameter or parameters of passed module
+        :param m:   parameter or module
+        :param lr:  learning rate for this parameter or module
+    """
+    if isinstance(m, torch.nn.Module):
+        for p in m.parameters():
+            set_lr(p, lr)
+    elif isinstance(m, torch.nn.Parameter):
+        m.__q_lr = lr
+    else:
+        pass
+
+
+def remove_lr(m):
+    """ removes custom learning rates from this module """
+    if isinstance(m, torch.nn.Module):
+        for p in m.parameters():
+            remove_lr(p)
+    elif isinstance(m, torch.nn.Parameter):
+        if hasattr(m, "__q_lr"):
+            delattr(m, "__q_lr")
+
+
+def paramgroups_of(m):
+    """ gets parameters of given module as parameter groups. useful when set_lr has been used """
+    params = m.parameters()
+    default_group = {"params": []}
+    paramgroups = []
+    for param in params:
+        g = None
+        if hasattr(param, "__q_lr"):
+            g = {"params": [param], "lr": param.__q_lr}
+        if hasattr(param, "__q_l2"):
+            g = {"params": [param], "weight_decay": param.__q_l2}
+        if g is None:
+            default_group["params"].append(param)
+        else:
+            paramgroups.append(g)
+    paramgroups.append(default_group)
+    return paramgroups
+
+
 def copy_params(source, target):
     """ Copies parameters from source to target such that target has the same parameter values as source.
         (if source params change, so does target's)"""
