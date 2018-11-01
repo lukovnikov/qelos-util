@@ -174,7 +174,6 @@ class TransformerLM(torch.nn.Module):
             self.wordout.weight = self.wordemb.weight
 
     def forward(self, x):   # (batsize, seqlen) wordids
-        print(x.device, self.wordemb.weight.device)
         xemb, _ = self.wordemb(x)
         enc = self.transformer(xemb)
         out = self.wordout(enc)
@@ -245,6 +244,7 @@ def run(lr=0.001,
 
     if test:
         for i, batch in enumerate(valid_batches):
+            batch = [batch_e.to(device) for batch_e in batch]
             y = valid_m(batch[0])
             if i > 5:
                 break

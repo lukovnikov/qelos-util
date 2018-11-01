@@ -228,7 +228,6 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
     # if run is False:
     #     kwargs = locals().copy()
     #     return partial(train_epoch, **kwargs)
-    print("train device: {}".format(device))
 
     for loss in losses:
         loss.push_epoch_to_history(epoch=current_epoch-1)
