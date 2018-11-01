@@ -163,7 +163,7 @@ class _LMLoaderIter_Test(object):
 class TransformerLM(torch.nn.Module):
     def __init__(self, dim=512, worddic=None, numlayers=3, numheads=8, activation=torch.nn.ReLU,
                  embedding_dropout=0., attention_dropout=0., residual_dropout=0.,
-                 word_dropout=0., relpos=True, tie_wordvecs=True, maxlen=512):
+                 word_dropout=0., relpos=True, tie_wordvecs=False, maxlen=512):
         super(TransformerLM, self).__init__()
         self.wordemb = q.WordEmb(dim, worddic=worddic, word_dropout=word_dropout)
         self.transformer = q.TransformerDecoder(dim=dim, numlayers=numlayers, numheads=numheads, activation=activation,
@@ -212,7 +212,7 @@ def run(lr=0.001,
         numlayers=2,
         numheads=8,
         relpos=True,
-        tie_wordvecs=True,
+        tie_wordvecs=False,
         gradnorm=0.5,
         epochs=200,
         dim=256,
