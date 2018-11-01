@@ -272,7 +272,7 @@ def run(lr=0.001,
                             on_before_optim_step=[lambda: torch.nn.utils.clip_grad_norm_(m.parameters(), gradnorm)])
     train_epoch_f = partial(q.train_epoch, model=m, dataloader=train_batches, optim=optim, losses=[loss],
                             device=device, _train_batch=train_batch_f)
-    valid_epoch_f = partial(q.test_epoch, model=m, dataloader=valid_batches, losses=validlosses, device=device,
+    valid_epoch_f = partial(q.test_epoch, model=valid_m, dataloader=valid_batches, losses=validlosses, device=device,
                             on_end=[lrp_f])
     tt.tock("created model")
     tt.tick("training")
