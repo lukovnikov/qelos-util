@@ -190,8 +190,8 @@ class GloveGoldGetter(torch.nn.Module):
             # - do cosine
             norms = self.emb.weight.norm(2, 1, keepdim=True).clamp(1e-6, np.infty)
             sims = (sims / norms) / norms.t()
-            print(sims.min(), sims.max())
             sims = ((sims - sims.min()) / (sims.max() - sims.min())) * 2. - 1.
+            print(sims.min(), sims.max())
             sims = torch.log(sims * 0.5 + 0.5)      # spread out -1 to 1 --> -infty, 0
             # - do mask (set word ids not in self.emb.D to -infty
             revD = {v: k for k, v in self.emb.D.items()}
