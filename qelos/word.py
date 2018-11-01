@@ -35,7 +35,7 @@ class VectorLoader(object):
                 if dim is None:
                     dim = len(splits) - 1
                 tail = splits[-dim:]
-                head = "".join(splits[:-dim])
+                head = " ".join(splits[:-dim])
                 splits = [head] + tail
                 if len(splits) - 1 != dim:
                     print(i, len(splits))
