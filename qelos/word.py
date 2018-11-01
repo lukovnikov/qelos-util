@@ -40,7 +40,8 @@ class VectorLoader(object):
                     print(i, len(splits))
                     skipped += 1
                     continue
-                assert(splits[0] not in wordset)
+                if splits[0] in wordset:
+                    print(splits[0], i, line)
                 wordset.add(splits[0])
                 words.append(splits[0])
                 vecs.append([float(x) for x in splits[1:]])
