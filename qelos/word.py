@@ -33,6 +33,7 @@ class VectorLoader(object):
                     dim = len(splits) - 1
                 if len(splits) - 1 != dim:
                     print(i)
+                    raise q.SumTingWongException()
                 i += 1
                 # if i == 500: break
                 tt.live("{}".format(i))
