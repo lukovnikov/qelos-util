@@ -179,7 +179,7 @@ class PPLfromCE(q.LossWrapper):
 
 class GloveGoldGetter(torch.nn.Module):
     """ Compute similarities between all words in worddic based on dim-dimensional pretrained glove embeddings """
-    def __init__(self, path="../../../data/glove/glove.50d", worddic=None):
+    def __init__(self, path="../../../data/glove/glove.50d", worddic=None, docosine=False):
         super(GloveGoldGetter, self).__init__()
         self.emb = q.WordEmb.load_pretrained_path(path, selectD=worddic)
         # compute similarities based on glove vectors between every word in worddic
@@ -188,11 +188,12 @@ class GloveGoldGetter(torch.nn.Module):
             sims = torch.einsum("ai,bi->ab", (self.emb.weight, self.emb.weight))
             print(sims.min(), sims.max())
             # - do cosine
-            norms = self.emb.weight.norm(2, 1, keepdim=True).clamp(1e-6, np.infty)
-            sims = (sims / norms) / norms.t()
-            sims = ((sims - sims.min()) / (sims.max() - sims.min())) * 2. - 1.
-            print(sims.min(), sims.max())
-            sims = torch.log(sims * 0.5 + 0.5)      # spread out -1 to 1 --> -infty, 0
+            if docosine:
+                norms = self.emb.weight.norm(2, 1, keepdim=True).clamp(1e-6, np.infty)
+                sims = (sims / norms) / norms.t()
+                sims = ((sims - sims.min()) / (sims.max() - sims.min())) * 2. - 1.
+                print(sims.min(), sims.max())
+                sims = torch.log(sims * 0.5 + 0.5)      # spread out -1 to 1 --> -infty, 0
             # - do mask (set word ids not in self.emb.D to -infty
             revD = {v: k for k, v in self.emb.D.items()}
             oov_count = 0
