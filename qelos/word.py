@@ -23,6 +23,7 @@ class VectorLoader(object):
         tt = q.ticktock("word vector formatter")
         tt.tick("formatting word vectors")
         skipped = 0
+        duplicate = 0
         with open(path) as inf:
             words = []
             wordset = set()
@@ -41,7 +42,9 @@ class VectorLoader(object):
                     skipped += 1
                     continue
                 if splits[0] in wordset:
-                    print(splits[0], i, line)
+                    print(splits[0], i)
+                    duplicate += 1
+                    continue
                 wordset.add(splits[0])
                 words.append(splits[0])
                 vecs.append([float(x) for x in splits[1:]])
