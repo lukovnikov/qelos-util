@@ -189,6 +189,7 @@ class GloveGoldGetter(torch.nn.Module):
             # - do cosine
             norms = self.emb.weight.norm(2, 1, keepdim=True).clamp(1e-6, np.infty)
             sims = (sims / norms) / norms.t()
+            sims = torch.log(sims * 0.5 + 0.5)      # spread out -1 to 1 --> -infty, 0
             # - do mask (set word ids not in self.emb.D to -infty
             revD = {v: k for k, v in self.emb.D.items()}
             oov_count = 0
@@ -238,7 +239,7 @@ def run(lr=20.,
         test=False,
         repretrain=False,       # retrain base model instead of loading it
         savepath="rnnlm.base.pt",        # where to save after training
-        glovepath="../../../data/glove/glove.50d"
+        glovepath="../../../data/glove/glove.300d"
         ):
     tt = q.ticktock("script")
     device = torch.device("cpu")
