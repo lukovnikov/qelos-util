@@ -20,6 +20,8 @@ class VectorLoader(object):
     @classmethod
     def transform_to_format(cls, path, outpath):
         tt = q.ticktock("word vector formatter")
+        tt.tick("formatting word vectors")
+        skipped = 0
         with open(path) as inf:
             words = []
             vecs = []
@@ -27,13 +29,15 @@ class VectorLoader(object):
             i = 0
             for line in inf:
                 splits = line.strip().split(" ")
-                words.append(splits[0])
-                vecs.append([float(x) for x in splits[1:]])
                 if dim is None:
                     dim = len(splits) - 1
                 if len(splits) - 1 != dim:
                     print(i)
-                    raise q.SumTingWongException()
+                    skipped += 1
+                    continue
+                words.append(splits[0])
+                vecs.append([float(x) for x in splits[1:]])
+                    # raise q.SumTingWongException()
                 i += 1
                 # if i == 500: break
                 tt.live("{}".format(i))
@@ -42,6 +46,8 @@ class VectorLoader(object):
             np.save(outpath+".npy", mat)
             with open(outpath + ".words", "w") as outwordsf:
                 json.dump(words, outwordsf)
+        tt.msg("skipped {} vectors".format(skipped))
+        tt.tock("formatted word vectors")
 
 
     @staticmethod
