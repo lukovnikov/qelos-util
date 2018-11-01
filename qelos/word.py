@@ -23,11 +23,15 @@ class VectorLoader(object):
         with open(path) as inf:
             words = []
             vecs = []
+            dim = None
             i = 0
             for line in inf:
                 splits = line.strip().split(" ")
                 words.append(splits[0])
                 vecs.append([float(x) for x in splits[1:]])
+                if dim is None:
+                    dim = len(splits) - 1
+                assert(len(splits) - 1 == dim)
                 i += 1
                 # if i == 500: break
                 tt.live("{}".format(i))
