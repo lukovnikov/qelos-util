@@ -25,6 +25,7 @@ class VectorLoader(object):
         skipped = 0
         with open(path) as inf:
             words = []
+            wordset = set()
             vecs = []
             dim = None
             i = 0
@@ -39,6 +40,8 @@ class VectorLoader(object):
                     print(i, len(splits))
                     skipped += 1
                     continue
+                assert(splits[0] not in wordset)
+                wordset.add(splits[0])
                 words.append(splits[0])
                 vecs.append([float(x) for x in splits[1:]])
                     # raise q.SumTingWongException()
