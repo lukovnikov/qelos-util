@@ -177,7 +177,7 @@ class PPLfromCE(q.LossWrapper):
         return math.exp(self.celosswrapper.get_epoch_error())
 
 
-class GloveGoldGetter(object):
+class GloveGoldGetter(torch.nn.Module):
     """ Compute similarities between all words in worddic based on dim-dimensional pretrained glove embeddings """
     def __init__(self, path="../../../data/glove/glove.50d", worddic=None):
         super(GloveGoldGetter, self).__init__()
@@ -199,7 +199,8 @@ class GloveGoldGetter(object):
                     sims[i, i] = 0
                     oov_count += 1
             print("{}% ({}/{}) words not in glove dic".format((100*oov_count / sims.size(0)), oov_count, sims.size(0)))
-        self.sims = sims
+        self.register_buffer("sims", sims)
+        # self.sims = sims
 
     def __call__(self, x):
         """
