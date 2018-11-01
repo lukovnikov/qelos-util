@@ -19,7 +19,24 @@ class VectorLoader(object):
 
     @classmethod
     def transform_to_format(cls, path, outpath):
-        pass    # TODO: implement transformation from normal format to numpy + worddic format
+        tt = q.ticktock("word vector formatter")
+        with open(path) as inf:
+            words = []
+            vecs = []
+            i = 0
+            for line in inf:
+                splits = line.strip().split(" ")
+                words.append(splits[0])
+                vecs.append([float(x) for x in splits[1:]])
+                i += 1
+                # if i == 500: break
+                tt.live("{}".format(i))
+            tt.stoplive()
+            mat = np.array(vecs).astype("float32")
+            np.save(outpath+".npy", mat)
+            with open(outpath + ".words", "w") as outwordsf:
+                json.dump(words, outwordsf)
+
 
     @staticmethod
     def _load_path(path):
@@ -275,3 +292,7 @@ class WordLinout(torch.nn.Linear):
         b = torch.tensor(b) if b is not None else None
         ret = cls(dim=dim, worddic=D, _weight=W, _bias=b, **kw)
         return ret
+
+
+if __name__ == '__main__':
+    VectorLoader.transform_to_format("/home/denis/Downloads/glove.6B.50d.txt", "../data/glove/glove.50d")
