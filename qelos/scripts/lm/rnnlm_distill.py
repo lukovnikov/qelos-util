@@ -455,7 +455,8 @@ def train_epoch_distill(model=None, dataloader=None, optim=None, losses=None, de
     [e() for e in on_start]
 
     q.epoch_reset(model)
-    q.epoch_reset(mbase)
+    if mbase is not None:
+        q.epoch_reset(mbase)
 
     for i, _batch in enumerate(dataloader):
         ttmsg = _train_batch(batch=_batch, model=model, optim=optim, losses=losses, device=device,
