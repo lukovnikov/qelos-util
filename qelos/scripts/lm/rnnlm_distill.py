@@ -331,8 +331,10 @@ def run(lr=20.,
         goldgetter = None
     elif distill == "glove":
         mbase = None
+        tt.tick("creating gold getter based on glove")
         goldgetter = GloveGoldGetter(glovepath, worddic=D)
         goldgetter.to(device)
+        tt.tock("created gold getter")
     else:   raise q.SumTingWongException("unknown distill mode {}".format(distill))
 
     train_epoch_f = partial(train_epoch_distill, model=ms, dataloader=train_batches, optim=optim, losses=[loss],
