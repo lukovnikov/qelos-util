@@ -76,7 +76,10 @@ class WordEmb(torch.nn.Embedding, VectorLoader):
         # extract maskid from worddic
         maskid = worddic[self.masktoken] if self.masktoken in worddic else None
         maskid = maskid if not no_masking else None
-        indim = max(worddic.values())+1        # to init from worddic
+        if _weight is not None:
+            indim = _weight.size(0)
+        else:
+            indim = max(worddic.values())+1        # to init from worddic
 
         super(WordEmb, self).__init__(indim, dim, padding_idx=maskid,
                                       max_norm=max_norm, norm_type=norm_type,
@@ -132,9 +135,9 @@ class WordEmb(torch.nn.Embedding, VectorLoader):
         """
         # check consistency between D and W
         assert(len(W.shape) == 2)
-        vocsize, dim = W.shape
+        _vocsize, dim = W.shape
         vocsizeD = max(D.values())+1
-        assert(vocsizeD == vocsize)
+        assert(vocsizeD == _vocsize)
 
         # rearrange according to newD
         if selectD is not None:

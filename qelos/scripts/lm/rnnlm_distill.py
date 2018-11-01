@@ -178,10 +178,45 @@ class PPLfromCE(q.LossWrapper):
 
 
 class GloveGoldGetter(object):
-    def __init__(self, dim, worddic=None):
+    """ Compute similarities between all words in worddic based on dim-dimensional pretrained glove embeddings """
+    def __init__(self, path="../../../data/glove/glove.50d", worddic=None):
         super(GloveGoldGetter, self).__init__()
-        self.dim, self.D = dim, worddic
-        self.emb = q.WordEmb.load_pretrained_path("../../../")
+        self.emb = q.WordEmb.load_pretrained_path(path, selectD=worddic)
+        # compute similarities based on glove vectors between every word in worddic
+        # - do dots
+        with torch.no_grad():
+            sims = torch.einsum("ai,bi->ab", (self.emb.weight, self.emb.weight))
+            # - do cosine
+            norms = self.emb.weight.norm(2, 1, keepdim=True).clamp(1e-6, np.infty)
+            sims = (sims / norms) / norms.t()
+            # - do mask (set word ids not in self.emb.D to -infty
+            revD = {v: k for k, v in self.emb.D.items()}
+            oov_count = 0
+            for i in range(sims.size(0)):
+                if i not in revD:
+                    sims[:, i] = -np.infty
+                    sims[i, :] = -np.infty
+                    sims[i, i] = 0
+                    oov_count += 1
+            print("{}% ({}/{}) words not in glove dic".format((100*oov_count / sims.size(0)), oov_count, sims.size(0)))
+        self.sims = sims
+
+    def __call__(self, x):
+        """
+        :param x:   (batsize, seqlen) int ids of gold, torch tensor
+        """
+        ret = self.sims[x]
+        return ret
+
+
+def test_glove_gold_getter():
+    D = "cat dog pup person the a child kid icetea arizonagreen".split()
+    D = dict(zip(D, range(len(D))))
+    m = GloveGoldGetter(path="../../../data/glove/miniglove.50d", worddic=D)
+    print(m)
+    x = torch.randint(0, 9, (5, 4)).long()
+    y = m(x)
+    print(y.size())
 
 
 def run(lr=20.,
@@ -193,7 +228,7 @@ def run(lr=20.,
         encdim=200,
         numlayers=2,
         tieweights=False,
-        distill="rnnlm",        # "rnnlm", "glove"
+        distill="glove",        # "rnnlm", "glove"
         seqlen=35,
         batsize=20,
         eval_batsize=80,
@@ -202,6 +237,7 @@ def run(lr=20.,
         test=False,
         repretrain=False,       # retrain base model instead of loading it
         savepath="rnnlm.base.pt",        # where to save after training
+        glovepath="../../../data/glove/glove.50d"
         ):
     tt = q.ticktock("script")
     device = torch.device("cpu")
@@ -288,8 +324,15 @@ def run(lr=20.,
     lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1 / 4, patience=0, verbose=True)
     lrp_f = lambda: lrp.step(validloss.get_epoch_error())
 
+    if distill == "rnnlm":
+        mbase = m
+        goldgetter = None
+    elif distill == "glove":
+        mbase = None
+        goldgetter = GloveGoldGetter(glovepath, worddic=D)
+
     train_epoch_f = partial(train_epoch_distill, model=ms, dataloader=train_batches, optim=optim, losses=[loss],
-                            device=device, _train_batch=train_batch_f, mbase=m)
+                            device=device, _train_batch=train_batch_f, mbase=mbase, goldgetter=goldgetter)
     valid_epoch_f = partial(q.test_epoch, model=ms, dataloader=valid_batches, losses=validlosses, device=device,
                             on_end=[lrp_f])
 
@@ -383,7 +426,7 @@ def train_batch_distill(batch=None, model=None, optim=None, losses=None, device=
 
 def train_epoch_distill(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock("-"),
              current_epoch=0, max_epochs=0, _train_batch=train_batch_distill, on_start=tuple(), on_end=tuple(), run=False,
-             mbase=None):
+             mbase=None, goldgetter=None):
     """
     Performs an epoch of training on given model, with data from given dataloader, using given optimizer,
     with loss computed based on given losses.
@@ -416,7 +459,7 @@ def train_epoch_distill(model=None, dataloader=None, optim=None, losses=None, de
     for i, _batch in enumerate(dataloader):
         ttmsg = _train_batch(batch=_batch, model=model, optim=optim, losses=losses, device=device,
                              batch_number=i, max_batches=len(dataloader), current_epoch=current_epoch, max_epochs=max_epochs,
-                             run=True, mbase=mbase)
+                             run=True, mbase=mbase, goldgetter=goldgetter)
         tt.live(ttmsg)
 
     tt.stoplive()
@@ -426,4 +469,5 @@ def train_epoch_distill(model=None, dataloader=None, optim=None, losses=None, de
 
 
 if __name__ == '__main__':
+    # test_glove_gold_getter()
     q.argprun(run)
