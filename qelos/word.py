@@ -31,7 +31,8 @@ class VectorLoader(object):
                 vecs.append([float(x) for x in splits[1:]])
                 if dim is None:
                     dim = len(splits) - 1
-                assert(len(splits) - 1 == dim)
+                if len(splits) - 1 != dim:
+                    print(i)
                 i += 1
                 # if i == 500: break
                 tt.live("{}".format(i))
