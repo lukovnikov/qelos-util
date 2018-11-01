@@ -143,7 +143,7 @@ class WordEmb(torch.nn.Embedding, VectorLoader):
         if self.padding_idx is not None:
             self.weight.data[self.padding_idx].fill_(0)
 
-    def do_word_dropout(self, x):   # (batsize, ..., dim)
+    def do_word_dropout(self, x, ret):   # (batsize, ..., dim)
         if self.training and self.word_dropout is not None:
             if self._word_dropout_mask is None:
                 # sample new mask
@@ -151,12 +151,12 @@ class WordEmb(torch.nn.Embedding, VectorLoader):
                 word_dropout_mask = self.word_dropout(word_dropout_mask).clamp(0, 1)
                 self._word_dropout_mask = word_dropout_mask     # cache mask for this batch
             x_drop = self._word_dropout_mask[x]
-            x = x * x_drop
-        return x
+            ret = ret * x_drop
+        return ret
 
     def forward(self, x):
         ret = super(WordEmb, self).forward(x)
-        ret = self.do_word_dropout(ret)
+        ret = self.do_word_dropout(x, ret)
         mask = None
         if self.padding_idx is not None:
             mask = (x != self.padding_idx).int()
@@ -248,7 +248,7 @@ class SwitchedWordEmb(torch.nn.Module):
         selmaskrep = [1] * (selmask.dim() - 1) + [catemb.size(-2)]
         selmask = selmask.repeat(*selmaskrep).unsqueeze(-1)
         ret = torch.gather(catemb, -1, selmask).squeeze(-1) # (batsize, ..., dim)
-        ret = self.base.do_word_dropout(ret)
+        ret = self.base.do_word_dropout(x, ret)
         return ret, basemask
 
 
