@@ -205,9 +205,9 @@ class PPLfromCE(q.LossWrapper):
 
 
 def run(lr=0.001,
-        edropout=0.1,
+        edropout=0.2,
         wdropout=0.1,
-        rdropout=0.1,
+        rdropout=0.3,
         adropout=0.05,
         numlayers=2,
         numheads=8,
