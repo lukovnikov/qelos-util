@@ -55,7 +55,7 @@ class WordEmb(torch.nn.Embedding, VectorLoader):
 
         :param dim: embedding vector dimension
         :param worddic: worddic, must be provided
-        :param value: (optional) value to set the weight of nn.Embedding to
+        :param _weight: (optional) value to set the weight of nn.Embedding to     (numwords, dim)
         :param max_norm: see nn.Embedding
         :param norm_type: see nn.Embedding
         :param scale_grad_by_freq: see nn.Embedding

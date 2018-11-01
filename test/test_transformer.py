@@ -87,7 +87,7 @@ class TestAttentionCell(TestCase):
         numheads = 6
         m = MultiHeadAttention(12, numheads=numheads, bidir=False)
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=5)
+        mc.set_cell_mode(True)
 
         ys = []
         for i in range(x.size(1)):
@@ -159,7 +159,7 @@ class TestAttentionCell(TestCase):
 
         m = MultiHeadAttention(12, numheads=4, bidir=False)
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=horizon)
+        mc.set_cell_mode(True)
 
         ys = []
         allys = []
@@ -203,7 +203,7 @@ class TestAttentionCell(TestCase):
         numheads = 6
         m = MultiHeadAttention(12, numheads=numheads, bidir=False, relpos=True)
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=5)
+        mc.set_cell_mode(True)
 
         ys = []
         for i in range(x.size(1)):
@@ -240,7 +240,7 @@ class TestAttentionCell(TestCase):
         numheads = 6
         m = MultiHeadAttention(12, numheads=numheads, bidir=False)
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=5)
+        mc.set_cell_mode(True)
 
         ys = []
         for i in range(x.size(1)):
@@ -311,7 +311,7 @@ class TestDecoderBlock(TestCase):
 
         m = TransformerDecoderBlock(12, numheads=4, noctx=True)
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=5)
+        mc.set_cell_mode(True)
 
         y = m(x)
         y.norm(1).backward()
@@ -353,7 +353,7 @@ class TestDecoderBlock(TestCase):
 
         m = TransformerDecoderBlock(12, numheads=4, noctx=True, relpos=True)
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=5)
+        mc.set_cell_mode(True)
 
         y = m(x)
         y.norm(1).backward()
@@ -386,7 +386,7 @@ class TestDecoderBlock(TestCase):
 
         m = TransformerDecoderBlock(12, numheads=4, bidir=False, noctx=True, relpos=False)
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=horizon)
+        mc.set_cell_mode(True)
 
         ys = []
         allys = []
@@ -431,7 +431,7 @@ class TestDecoderTransformer(TestCase):
 
         m = TransformerDecoder(12, numheads=4, numlayers=2, noctx=True)
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=5)
+        mc.set_cell_mode(True)
 
         y = m(x)
         y.norm(1).backward()
@@ -462,7 +462,7 @@ class TestDecoderTransformer(TestCase):
 
         m = TransformerDecoder(12, numheads=4, numlayers=2, noctx=True, relpos=True)
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=5)
+        mc.set_cell_mode(True)
 
         y = m(x)
         y.norm(1).backward()
@@ -493,9 +493,9 @@ class TestDecoderTransformer(TestCase):
         x = torch.randn(3, seqlen, 12)
         x.requires_grad = True
 
-        m = TransformerDecoder(12, numheads=4, numlayers=2, noctx=True, relpos=False, maxlen=-1)
+        m = TransformerDecoder(12, numheads=4, numlayers=2, noctx=True, relpos=False)
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=horizon)
+        mc.set_cell_mode(True)
 
         ys = []
         allys = []
@@ -543,7 +543,7 @@ class TestDecoderTransformer(TestCase):
 
         m = TransformerDecoder(12, numheads=4, numlayers=2, noctx=False)
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=5)
+        mc.set_cell_mode(True)
         assert(m._cell_mode == False)
         assert(mc._cell_mode == True)
 
@@ -602,7 +602,7 @@ class TestTS2S(TestCase):
         zref = z
 
         mc = q.deep_copy(m)
-        mc.set_cell_mode(True, horizon=5)
+        mc.set_cell_mode(True)
 
         x = torch.tensor(x.detach().numpy() + 0.)
         x.requires_grad = True

@@ -8,11 +8,11 @@ import qelos as q
 
 __all__ = ["MultiHeadAttention", "TransformerEncoderBlock",
            "TransformerDecoderBlock", "TransformerEncoder", "TransformerDecoder",
-           "TS2S", "TS2S_arg"]
+           "TS2S", "TS2S_arg", "WaveEmb"]
 
 
 def get_sinusoid_encoding_table(seqlen, dim, start=0, padding_idx=None):
-    ''' Sinusoid position encoding table '''
+    ''' Sinusoid position encoding table, from jadore's github '''
 
     def cal_angle(position, hid_idx):
         return position / np.power(10000, 2 * (hid_idx // 2) / dim)
@@ -32,10 +32,32 @@ def get_sinusoid_encoding_table(seqlen, dim, start=0, padding_idx=None):
     return torch.tensor(sinusoid_table.astype("float32"))
 
 
+class WaveEmb(q.WordEmb):
+    def __init__(self, dim, maxlen, start=0, padding_idx=None, **kw):
+        worddic = dict(zip(range(start, maxlen), range(start, maxlen)))
+        W = get_sinusoid_encoding_table(maxlen, dim, start=start, padding_idx=padding_idx)
+        W = torch.tensor(W)
+        super(WaveEmb, self).__init__(dim, worddic=worddic, _weight=W, **kw)
+
+
 class MultiHeadAttention(nn.Module):
     def __init__(self, indim=None, kdim=None, vdim=None, bidir=True, numheads=None,
                  attention_dropout=0., residual_dropout=0., scale=True,
                  maxlen=512, relpos=False, **kw):
+        """
+
+        :param indim:   input dimension (also output is of this dimension)
+        :param kdim:    dimension to use for key (and query) vectors. if unspecified, indim is used
+        :param vdim:    dimension to use for value vectors. if unspecified, indim is used
+        :param bidir:   if False, applies causality mask to prevent use of information from future time steps (left-to-right mode)
+        :param numheads:    number of attention heads
+        :param attention_dropout:   dropout rate to apply on the attention probabilities
+        :param residual_dropout:    dropout rate to apply on the output vectors. Residual dropout is shared across time
+        :param scale:   if True, attention is scaled
+        :param maxlen:  maximum length of sequences to support. Necessary for relative position encodings
+        :param relpos:  if True, does relative position encoding. If "full", does more TODO
+        :param kw:
+        """
         super(MultiHeadAttention, self).__init__(**kw)
 
         self.numheads, self.indim = numheads, indim
@@ -61,11 +83,11 @@ class MultiHeadAttention(nn.Module):
         self._cache_relpos_vec = None
         self._cache_relpos_sizes = None
         self.relpos_k_proj = None
+        self.maxlen = maxlen
         if relpos is True or relpos == "full":
             # print("using simple relative position")
             waves = get_sinusoid_encoding_table(maxlen, indim, start=-maxlen)
             self.relpos_emb = torch.nn.Embedding.from_pretrained(waves, freeze=True)
-            self.maxlen = maxlen
             if relpos == "full":        # TODO: test
                 self.relpos_k_proj = nn.Linear(indim, numheads * self.d_k)    # projecting for rel position keys
                 self.relpos_u = torch.nn.Parameter(torch.empty(numheads, self.d_k))
@@ -84,22 +106,15 @@ class MultiHeadAttention(nn.Module):
         self._horizon = None
         self._prev_k = None      # (batsize, seqlen, numheads, dim)
         self._prev_v = None
-        self._lm_mode = False       # if True, rec_reset doesn't reset previous k and v
 
-    def set_cell_mode(self, val:bool, horizon:int=None, lm_mode:bool=False):
+    def set_cell_mode(self, val:bool):
         # TODO: accumulate mask in cell mode
         if val is True:
-            assert(horizon is not None)
             assert(self.bidir == False)
         self._cell_mode = val
-        self._horizon = horizon
-        self._lm_mode = lm_mode
+        self._horizon = self.maxlen
 
-    def rec_reset(self):
-        if not self._lm_mode:
-            self.epoch_reset()
-
-    def epoch_reset(self):
+    def batch_reset(self):
         self._prev_k = None
         self._prev_v = None
 
@@ -260,7 +275,7 @@ class TransformerEncoderBlock(nn.Module):
         :param bidir:       whether to run this in bidirectional (default) or uni-directional mode.
                             if uni-directional, this becomes a left-to-right LM-usable block by using triu mask
         :param numheads:    number of self-attention heads
-        :param activation:  activation function to use
+        :param activation:  activation function to use in positionwise feedforward, between the two linear layers
         :param attention_dropout:   dropout on attention
         :param residual_dropout:    dropout on residual
         :param scale:       whether to scale attention weights by dimension of value vectors
@@ -289,9 +304,13 @@ class TransformerEncoderBlock(nn.Module):
 
 
 class TransformerDecoderBlock(TransformerEncoderBlock):
+    """ Same as TransformerEncoderBlock but optionally takes a context and is not bidir."""
     def __init__(self, indim, kdim=None, vdim=None, numheads=None, activation=nn.ReLU,
                  attention_dropout=0., residual_dropout=0., scale=True, noctx=False,
                  maxlen=512, relpos=False, **kw):
+        """
+        :param noctx:   if True, no context should be given in forward().
+        """
         super(TransformerDecoderBlock, self).__init__(indim, kdim=kdim, vdim=vdim, _bidir=False, numheads=numheads,
                                                       activation=activation, attention_dropout=attention_dropout, residual_dropout=residual_dropout,
                                                       scale=scale, maxlen=maxlen, relpos=relpos, **kw)
@@ -303,8 +322,8 @@ class TransformerDecoderBlock(TransformerEncoderBlock):
                relpos=False)
             self.ln_ctx = nn.LayerNorm(indim)
 
-    def set_cell_mode(self, val:bool, horizon:int=None, lm_mode:bool=False):
-        self.slf_attn.set_cell_mode(val, horizon=horizon, lm_mode=lm_mode)
+    def set_cell_mode(self, val:bool):
+        self.slf_attn.set_cell_mode(val)
 
     def forward(self, x, ctx=None, mask=None, ctxmask=None):
         """
@@ -336,11 +355,26 @@ class TransformerDecoderBlock(TransformerEncoderBlock):
 class TransformerEncoder(nn.Module):
     def __init__(self, dim=512, kdim=None, vdim=None, maxlen=512, numlayers=6, numheads=8, activation=nn.ReLU,
                  embedding_dropout=0., attention_dropout=0., residual_dropout=0., scale=True,
-                 relpos=False, **kw):
+                 relpos=False, posemb=None, **kw):
+        """
+        :param dim:     see MultiHeadAttention
+        :param kdim:    see MultiHeadAttention
+        :param vdim:    see MultiHeadAttention
+        :param maxlen:  see MultiHeadAttention
+        :param numlayers:   number of TransformerEncoderBlock layers used
+        :param numheads:    see MultiHeadAttention
+        :param activation:  which activation function to use in positionwise feedforward layers
+        :param embedding_dropout:   dropout rate on embedding. Time-shared dropout. Not applied to position embeddings
+        :param attention_dropout:   see MultiHeadAttention
+        :param residual_dropout:    dropout rate on outputs of attention and feedforward layers
+        :param scale:   see MultiHeadAttention
+        :param relpos:  see MultiHeadAttention
+        :param posemb:  if specified, must be a nn.Embedding-like, embeds position indexes in the range 0 to maxlen
+        :param kw:
+        """
         super(TransformerEncoder, self).__init__(**kw)
         self.maxlen = maxlen
-        posembD = {str(k): k for k in range(maxlen)}
-        self.posemb = q.WordEmb(dim, worddic=posembD) if (maxlen > -1 and relpos is False) else None
+        self.posemb = posemb
         self.embdrop = q.RecDropout(p=embedding_dropout, shareaxis=1)
         self.layers = nn.ModuleList([
             TransformerEncoderBlock(dim, kdim=kdim, vdim=vdim, numheads=numheads, activation=activation,
@@ -374,12 +408,14 @@ class TransformerEncoder(nn.Module):
 class TransformerDecoder(nn.Module):
     def __init__(self, dim=512, kdim=None, vdim=None, maxlen=512, numlayers=6, numheads=8, activation=nn.ReLU,
                  embedding_dropout=0., attention_dropout=0., residual_dropout=0., scale=True, noctx=False,
-                 relpos=False, **kw):
+                 relpos=False, posemb=None, **kw):
+        """
+        :param noctx:   if False, no context should be given to forward(), see also TransformerDecoderBlock
+        """
         super(TransformerDecoder, self).__init__(**kw)
         self.maxlen = maxlen
         self.noctx = noctx
-        posembD = {str(k): k for k in range(maxlen)}
-        self.posemb = q.WordEmb(dim, worddic=posembD) if (maxlen > -1 and relpos is False) else None
+        self.posemb = posemb
         self.embdrop = q.RecDropout(p=embedding_dropout, shareaxis=1)
         self.layers = nn.ModuleList([
             TransformerDecoderBlock(dim, kdim=kdim, vdim=vdim, numheads=numheads, activation=activation,
@@ -390,22 +426,16 @@ class TransformerDecoder(nn.Module):
         if self.posemb is None:
             print("no absolute position embeddings")
 
-        self._lm_mode = False
         self._cell_mode = False
         self._posoffset = 0
 
-    def rec_reset(self):
-        if not self._lm_mode:
-            self.epoch_reset()
-
-    def epoch_reset(self):
+    def batch_reset(self):
         self._posoffset = 0
 
-    def set_cell_mode(self, val:bool, horizon:int=None, lm_mode:bool=False):
+    def set_cell_mode(self, val:bool):
         self._cell_mode = val
-        self._lm_mode = lm_mode
         for layer in self.layers:
-            layer.set_cell_mode(val, horizon=horizon, lm_mode=lm_mode)
+            layer.set_cell_mode(val)
 
     def forward(self, x, ctx=None, mask=None, ctxmask=None):
         """
@@ -444,14 +474,12 @@ class TS2S(nn.Module):
         self._ctx = None
         self._ctxmask = None
 
-    def rec_reset(self):
+    def batch_reset(self):
         self._x, self._ctx, self._ctxmask = None, None, None
 
-    def set_cell_mode(self, val:bool, horizon:int=None, lm_mode:bool=False):
-        if lm_mode is True:
-            raise Exception("lm_mode=True is not supported in transformer-based seq2seq")
+    def set_cell_mode(self, val:bool):
         self._cell_mode = val
-        self.decoder.set_cell_mode(val, horizon=horizon, lm_mode=lm_mode)
+        self.decoder.set_cell_mode(val)
 
     def forward(self, x, y, xmask=None, ymask=None):
         """
@@ -478,15 +506,19 @@ class TS2S(nn.Module):
 class TS2S_arg(TS2S):
     def __init__(self, dim=512, kdim=None, vdim=None, maxlen=512, numlayers=6, numheads=8,
                  activation=nn.ReLU, embedding_dropout=0., attention_dropout=0., residual_dropout=0.,
-                 scale=True, relpos=False, **kw):
+                 scale=True, relpos=False, posemb=None, **kw):
+        """
+        See TransformerEncoder and TransformerDecoder.
+        """
         encoder = TransformerEncoder(dim=dim, kdim=kdim, vdim=vdim, maxlen=maxlen, numlayers=numlayers,
                                      numheads=numheads, activation=activation,
                                      embedding_dropout=embedding_dropout, attention_dropout=attention_dropout,
-                                     residual_dropout=residual_dropout, scale=scale, relpos=relpos)
+                                     residual_dropout=residual_dropout, scale=scale, relpos=relpos, posemb=posemb)
         decoder = TransformerDecoder(dim=dim, kdim=kdim, vdim=vdim, maxlen=maxlen, numlayers=numlayers,
                                      numheads=numheads, activation=activation,
                                      embedding_dropout=embedding_dropout, attention_dropout=attention_dropout,
-                                     residual_dropout=residual_dropout, scale=scale, noctx=False, relpos=relpos)
+                                     residual_dropout=residual_dropout, scale=scale, noctx=False, relpos=relpos,
+                                     posemb=posemb)
         super(TS2S_arg, self).__init__(encoder, decoder, **kw)
 
 # endregion

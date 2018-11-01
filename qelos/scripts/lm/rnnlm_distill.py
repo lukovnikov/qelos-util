@@ -177,6 +177,13 @@ class PPLfromCE(q.LossWrapper):
         return math.exp(self.celosswrapper.get_epoch_error())
 
 
+class GloveGoldGetter(object):
+    def __init__(self, dim, worddic=None):
+        super(GloveGoldGetter, self).__init__()
+        self.dim, self.D = dim, worddic
+        self.emb = q.WordEmb.load_pretrained_path("../../../")
+
+
 def run(lr=20.,
         dropout=0.2,
         dropconnect=0.2,
@@ -301,7 +308,7 @@ def run(lr=20.,
 def train_batch_distill(batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
                 batch_number=-1, max_batches=0, current_epoch=0, max_epochs=0,
                 on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(), run=False,
-                mbase=None):
+                mbase=None, goldgetter=None):
     """
     Runs a single batch of SGD on provided batch and settings.
     :param _batch:  batch to run on
@@ -317,6 +324,8 @@ def train_batch_distill(batch=None, model=None, optim=None, losses=None, device=
     :param on_before_optim_step:    collection of functions for before optimization step is taken (gradclip)
     :param on_after_optim_step:     collection of functions for after optimization step is taken
     :param on_end:              collection of functions to call when batch is done
+    :param mbase:           base model where to distill from. takes inputs and produces output distributions to match by student model. if goldgetter is specified, this is not used.
+    :param goldgetter:      takes the gold and produces a softgold
     :return:
     """
     # if run is False:
@@ -334,10 +343,15 @@ def train_batch_distill(batch=None, model=None, optim=None, losses=None, device=
     gold = batch[-1]
 
     # run batch_in through teacher model to get teacher output distributions
-    mbase.eval()
-    q.batch_reset(mbase)
-    with torch.no_grad():
-        softgold = mbase(*batch_in)
+    if goldgetter is not None:
+        softgold = goldgetter(gold)
+    elif mbase is not None:
+        mbase.eval()
+        q.batch_reset(mbase)
+        with torch.no_grad():
+            softgold = mbase(*batch_in)
+    else:
+        raise q.SumTingWongException("goldgetter and mbase can not both be None")
 
     q.batch_reset(model)
     modelouts = model(*batch_in)
