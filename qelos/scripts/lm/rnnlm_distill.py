@@ -200,7 +200,7 @@ class GloveGoldGetter(torch.nn.Module):
                     sims[i, :] = -np.infty
                     sims[i, i] = 0
                     oov_count += 1
-            print("{}% ({}/{}) words not in glove dic".format((100*oov_count / sims.size(0)), oov_count, sims.size(0)))
+            print("{:.2f}% ({}/{}) words not in glove dic".format((100*oov_count / sims.size(0)), oov_count, sims.size(0)))
         self.register_buffer("sims", sims)
         # self.sims = sims
 
