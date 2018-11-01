@@ -174,6 +174,7 @@ class TransformerLM(torch.nn.Module):
             self.wordout.weight = self.wordemb.weight
 
     def forward(self, x):   # (batsize, seqlen) wordids
+        print(x.device, self.wordemb.weight.device)
         xemb, _ = self.wordemb(x)
         enc = self.transformer(xemb)
         out = self.wordout(enc)
