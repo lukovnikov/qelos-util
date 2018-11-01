@@ -265,7 +265,7 @@ def run(lr=0.001,
 
     # optim = torch.optim.SGD(q.params_of(m), lr=lr)
     optim = torch.optim.Adam(m.parameters(), lr=lr)
-    lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1/2, patience=2, verbose=True)
+    lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1/2, patience=0, verbose=True)
     lrp_f = lambda: lrp.step(validloss.get_epoch_error())
 
     train_batch_f = partial(q.train_batch,
