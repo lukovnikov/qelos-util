@@ -182,6 +182,8 @@ class WordEmb(torch.nn.Embedding, VectorLoader):
 
         # rearrange according to newD
         if selectD is not None:
+            tt = q.ticktock("WordEmb")
+            tt.tick("adapting to selection")
             vocsize = max(selectD.values()) + 1
             new_weight = np.zeros((vocsize, W.shape[1]), dtype=W.dtype)
             new_dic = {}
@@ -190,6 +192,7 @@ class WordEmb(torch.nn.Embedding, VectorLoader):
                     new_weight[v, :] = W[D[k], :]
                     new_dic[k] = v
             W, D = new_weight, new_dic
+            tt.tock("adapted to selection")
 
         # create
         W = torch.tensor(W)
