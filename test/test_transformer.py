@@ -456,6 +456,41 @@ class TestDecoderTransformer(TestCase):
         self.assertTrue(np.allclose(y.detach().numpy(), ys.detach().numpy(), atol=1e-5))
         self.assertTrue(np.allclose(xgrad.detach().numpy(), xsgrad.detach().numpy(), atol=1e-5))
 
+    def test_its_mask(self):
+        x = torch.randn(3, 4, 12)
+        x.requires_grad = True
+        xmask = torch.tensor([[1,1,0,1],[1,0,1,0],[1,1,0,0]])
+
+        m = TransformerDecoder(12, numheads=4, numlayers=2, noctx=True)
+        mc = q.deep_copy(m)
+        mc.set_cell_mode(True)
+
+        y = m(x, mask=xmask)
+        y.norm(1).backward()
+
+        xgrad = x.grad
+        print(y.norm(1, 2))
+        print(xgrad.norm(1, 2))
+        print(xmask)
+        self.assertTrue(np.all(((xmask == 0) == (xgrad.norm(1, 2) == 0)).detach().numpy()))
+        # return
+
+        # x = torch.randn(3, 4, 12)
+        x = torch.tensor(x.detach().numpy() + 0.)
+        x.requires_grad = True
+
+        ys = []
+        for i in range(x.size(1)):
+            ys.append(mc(x[:, i].unsqueeze(1), mask=xmask[:, i].unsqueeze(1)))
+        ys = torch.cat(ys, 1)
+        print(ys.norm(1, 2))
+        ys.norm(1).backward()
+
+        xsgrad = x.grad
+        print(xsgrad.norm(1, 2))
+        self.assertTrue(np.allclose(y.detach().numpy(), ys.detach().numpy(), atol=1e-5))
+        self.assertTrue(np.allclose(xgrad.detach().numpy(), xsgrad.detach().numpy(), atol=1e-5))
+
     def test_it_relpos(self):
         x = torch.randn(3, 5, 12)
         x.requires_grad = True

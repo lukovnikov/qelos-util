@@ -106,6 +106,7 @@ class MultiHeadAttention(nn.Module):
         self._horizon = None
         self._prev_k = None      # (batsize, seqlen, numheads, dim)
         self._prev_v = None
+        self._prev_mask = None
 
     def set_cell_mode(self, val:bool):
         # TODO: accumulate mask in cell mode
@@ -117,27 +118,36 @@ class MultiHeadAttention(nn.Module):
     def batch_reset(self):
         self._prev_k = None
         self._prev_v = None
+        self._prev_mask = None
 
-    def update_prev(self, k, v):
+    def update_prev(self, k, v, mask=None):
         """     Only used in cell mode.
         :param k:   (batsize, 1, numheads, dim_per_head)
         :param v:   (batsize, 1, numheads, dim_per_head)
+        :param mask: (batsize, 1)
         :return:
         """
         assert(k.size(1) == 1)
         assert(v.size(1) == 1)
+        assert(mask.size(1) == 1)
         if self._prev_k is None:
             assert(self._prev_v is None)
             self._prev_k, self._prev_v = k, v
+            if mask is not None:
+                self._prev_mask = mask
         else:
             self._prev_k = torch.cat([self._prev_k, k], 1)
             self._prev_v = torch.cat([self._prev_v, v], 1)
+            if mask is not None:
+                self._prev_mask = torch.cat([self._prev_mask, mask], 1)
+            else:
+                assert(self._prev_mask is None)
         if self._prev_k.size(1) > self._horizon:
             raise Exception("can't go beyond horizon ({}) -- history length: {}".format(self._horizon, self._prev_k.size(1)))
             self._prev_k = self._prev_k[:, -self._horizon:]
             self._prev_v = self._prev_v[:, -self._horizon:]
         assert(self._prev_k.size()[:-1] == self._prev_v.size()[:-1])
-        return self._prev_k, self._prev_v
+        return self._prev_k, self._prev_v, self._prev_mask
 
     def forward(self, x, k=None, v=None, mask=None):  # (batsize, <?>-seqlen, <?>-dim), mask on keys
         """
@@ -147,9 +157,6 @@ class MultiHeadAttention(nn.Module):
         :param mask:    mask on keys (batsize, seqlen)
         :return:    (batsize, seqlen, indim)
         """
-        if self._cell_mode is True:
-            if mask is not None:
-                raise NotImplemented("TODO: implement mask accumulation in MultiHeadAttention and its cell")
         batsize = x.size(0)
         _q = x
         _k = _q if k is None else k
@@ -160,7 +167,7 @@ class MultiHeadAttention(nn.Module):
         v = self.v_proj(_v).view(batsize, _v.size(1), self.numheads, self.d_v)
 
         if self._cell_mode is True:
-            k, v = self.update_prev(k, v)
+            k, v, mask = self.update_prev(k, v, mask=mask)
             # print(k.size(1), k[0, :, 0, 0])
 
         # region relative position matrix and projection
@@ -423,8 +430,6 @@ class TransformerDecoder(nn.Module):
                                     scale=scale, noctx=noctx, maxlen=maxlen, relpos=relpos)
             for _ in range(numlayers)
         ])
-        if self.posemb is None:
-            print("no absolute position embeddings")
 
         self._cell_mode = False
         self._posoffset = 0
