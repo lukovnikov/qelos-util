@@ -5,6 +5,7 @@ import os
 import numpy as np
 import json
 from copy import deepcopy
+import re
 
 
 __all__ = ["WordEmb", "SwitchedWordEmb", "WordLinout"]
@@ -28,11 +29,14 @@ class VectorLoader(object):
             dim = None
             i = 0
             for line in inf:
-                splits = line.strip().split(" ")
+                splits = re.split(r'\s', line.strip())
                 if dim is None:
                     dim = len(splits) - 1
+                tail = splits[-dim:]
+                head = "".join(splits[:-dim])
+                splits = [head] + tail
                 if len(splits) - 1 != dim:
-                    print(i)
+                    print(i, len(splits))
                     skipped += 1
                     continue
                 words.append(splits[0])
