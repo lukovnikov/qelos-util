@@ -42,7 +42,7 @@ class VectorLoader(object):
                     skipped += 1
                     continue
                 if splits[0] in wordset:
-                    print(splits[0], i)
+                    print(splits[0], i, line[:30])
                     duplicate += 1
                     continue
                 wordset.add(splits[0])
