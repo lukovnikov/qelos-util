@@ -42,7 +42,7 @@ class VectorLoader(object):
                     skipped += 1
                     continue
                 if splits[0] in wordset:
-                    print(splits[0], i, line[:30])
+                    print(splits[0], i, line[:50])
                     duplicate += 1
                     continue
                 wordset.add(splits[0])
@@ -58,6 +58,7 @@ class VectorLoader(object):
             with open(outpath + ".words", "w") as outwordsf:
                 json.dump(words, outwordsf)
         tt.msg("skipped {} vectors".format(skipped))
+        tt.msg("{} duplicates".format(duplicate))
         tt.tock("formatted word vectors")
 
 
