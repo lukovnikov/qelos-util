@@ -265,6 +265,7 @@ def run(lr=20.,
         tt.tick("reloading base model")
         with open(savepath, "rb") as f:
             m = torch.load(f)
+            m.to(device)
         tt.tock("reloaded base model")
     else:
         tt.tick("preparing training base")
