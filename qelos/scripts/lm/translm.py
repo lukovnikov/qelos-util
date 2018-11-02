@@ -223,6 +223,7 @@ def run(lr=0.001,
         gpu=0,
         test=True,
         subsampleeval=10,
+        wreg=1e-6,
         ):
     tt = q.ticktock("script")
     device = torch.device("cpu")
@@ -264,7 +265,7 @@ def run(lr=0.001,
         l.loss.to(device)
 
     # optim = torch.optim.SGD(m.parameters(), lr=lr)
-    optim = torch.optim.Adam(m.parameters(), lr=lr)
+    optim = torch.optim.Adam(m.parameters(), lr=lr, weight_decay=wreg)
     lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1/4, patience=0, verbose=True)
     lrp_f = lambda: lrp.step(validloss.get_epoch_error())
 
