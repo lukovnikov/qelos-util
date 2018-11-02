@@ -204,7 +204,7 @@ class PPLfromCE(q.LossWrapper):
         return math.exp(self.celosswrapper.get_epoch_error())
 
 
-def run(lr=20,#0.001,
+def run(lr=0.001,
         edropout=0.2,
         wdropout=0.1,
         rdropout=0.3,
@@ -263,8 +263,8 @@ def run(lr=20,#0.001,
     for l in [loss] + validlosses + testlosses:   # put losses on right device
         l.loss.to(device)
 
-    optim = torch.optim.SGD(m.parameters(), lr=lr)
-    # optim = torch.optim.Adam(m.parameters(), lr=lr)
+    # optim = torch.optim.SGD(m.parameters(), lr=lr)
+    optim = torch.optim.Adam(m.parameters(), lr=lr)
     lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1/4, patience=0, verbose=True)
     lrp_f = lambda: lrp.step(validloss.get_epoch_error())
 
