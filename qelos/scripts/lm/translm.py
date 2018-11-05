@@ -218,7 +218,7 @@ def run(lr=2.5e-4,
         dropout=-1.,
         numlayers=2,
         numheads=8,
-        relpos=True,
+        abspos=False,
         tie_wordvecs=False,
         gradnorm=0.5,
         epochs=200,
@@ -243,6 +243,7 @@ def run(lr=2.5e-4,
     print("{} batches in train".format(len(train_batches)))
     if dropout >= 0.:
         edropout, adropout, rdropout, wdropout = dropout, dropout, dropout, dropout
+    relpos = not abspos
 
     tt.tick("creating model")
 
