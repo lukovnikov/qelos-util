@@ -166,9 +166,15 @@ class TransformerLM(torch.nn.Module):
                  word_dropout=0., relpos=True, tie_wordvecs=False, maxlen=512):
         super(TransformerLM, self).__init__()
         self.wordemb = q.WordEmb(dim, worddic=worddic, word_dropout=word_dropout)
+        posemb = None
+        if relpos is False:
+            print("using learned absolute position embeddings")
+            posembD = dict(zip(range(maxlen), range(maxlen)))
+            posemb = q.WordEmb(dim, worddic=posembD)
         self.transformer = q.TransformerDecoder(dim=dim, numlayers=numlayers, numheads=numheads, activation=activation,
                                                 embedding_dropout=embedding_dropout, attention_dropout=attention_dropout,
-                                                residual_dropout=residual_dropout, relpos=relpos, noctx=True, maxlen=maxlen)
+                                                residual_dropout=residual_dropout, relpos=relpos, noctx=True, maxlen=maxlen,
+                                                posemb=posemb)
         self.wordout = q.WordLinout(dim, worddic=worddic)
         if tie_wordvecs:
             self.wordout.weight = self.wordemb.weight
@@ -205,10 +211,11 @@ class PPLfromCE(q.LossWrapper):
 
 
 def run(lr=2.5e-4,
-        edropout=0.2,
+        edropout=0.1,
         wdropout=0.1,
-        rdropout=0.3,
-        adropout=0.05,
+        rdropout=0.1,
+        adropout=0.1,
+        dropout=-1.,
         numlayers=2,
         numheads=8,
         relpos=True,
@@ -234,6 +241,8 @@ def run(lr=2.5e-4,
         load_data(batsize=batsize, eval_batsize=eval_batsize, seqlen=seqlen, subsample_eval=subsampleeval)
     tt.tock("data loaded")
     print("{} batches in train".format(len(train_batches)))
+    if dropout >= 0.:
+        edropout, adropout, rdropout, wdropout = dropout, dropout, dropout, dropout
 
     tt.tick("creating model")
 
