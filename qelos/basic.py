@@ -51,7 +51,7 @@ class RecDropout(torch.nn.Module):
         """ Convert RecDropouts contained in given module m to normal nn.Dropouts.
             Use names=None as additional filter (only listed names will be converted). """
         for _name, child in m.named_children():
-            if (names is not None or _name in names) and isinstance(child, RecDropout):
+            if (names is None or _name in names) and isinstance(child, RecDropout):
                 a = getattr(m, _name)
                 b = torch.nn.Dropout(p=a.p)
                 setattr(m, _name, b)
