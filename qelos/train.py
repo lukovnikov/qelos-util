@@ -2,11 +2,12 @@ import qelos as q
 import torch
 import numpy as np
 from IPython import embed
+import math
 from functools import partial
 
 
 __all__ = ["batch_reset", "epoch_reset", "LossWrapper", "BestSaver", "no_gold", "pp_epoch_losses",
-           "train_batch", "train_epoch", "test_epoch", "run_training"]
+           "train_batch", "train_epoch", "test_epoch", "run_training", "CosineLRwithWarmup"]
 
 
 def batch_reset(module):        # performs all resetting operations on module before using it in the next batch
@@ -387,3 +388,24 @@ class BestSaver(object):
         if self.verbose:
             print("Reloading best weights ({})".format(self.best_criterion))
         self.model.load_state_dict(torch.load(self.path))
+
+
+class CosineLRwithWarmup(torch.optim.lr_scheduler._LRScheduler):
+    def __init__(self, optimizer, cyc_len, lr_min=0, last_epoch=-1, warmup=100):
+        self.cyc_len = cyc_len
+        self.lr_min = lr_min
+        self.warmup = warmup
+        super(CosineLRwithWarmup, self).__init__(optimizer, last_epoch)
+
+    def get_lr(self):
+        if self.last_epoch < self.warmup:
+            ret = [
+                self.lr_min + (base_lr - self.lr_min) * (self.last_epoch / self.warmup)
+                for base_lr in self.base_lrs
+            ]
+        else:
+            ret = [self.lr_min + (base_lr - self.lr_min) *
+                   (1 + math.cos(math.pi * (((self.last_epoch - self.warmup) % self.cyc_len)
+                                            / self.cyc_len))) / 2
+                   for base_lr in self.base_lrs]
+        return ret

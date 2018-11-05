@@ -204,7 +204,7 @@ class PPLfromCE(q.LossWrapper):
         return math.exp(self.celosswrapper.get_epoch_error())
 
 
-def run(lr=0.001,
+def run(lr=2.5e-4,
         edropout=0.2,
         wdropout=0.1,
         rdropout=0.3,
@@ -238,7 +238,7 @@ def run(lr=0.001,
     tt.tick("creating model")
 
     m = TransformerLM(dim=dim, worddic=D, numlayers=numlayers, numheads=numheads,
-                      activation=torch.nn.ReLU, embedding_dropout=edropout,attention_dropout=adropout,
+                      activation=torch.nn.ReLU, embedding_dropout=edropout, attention_dropout=adropout,
                       word_dropout=wdropout, residual_dropout=rdropout, relpos=relpos,
                       tie_wordvecs=tie_wordvecs, maxlen=2*seqlen).to(device)
     valid_m = TransformerLMCell(m)
@@ -265,16 +265,19 @@ def run(lr=0.001,
         l.loss.to(device)
 
     # optim = torch.optim.SGD(m.parameters(), lr=lr)
+    numbats = len(train_batches)
+    print("{} batches in training".format(numbats))
     optim = torch.optim.Adam(m.parameters(), lr=lr, weight_decay=wreg)
-    lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1/4, patience=0, verbose=True)
-    lrp_f = lambda: lrp.step(validloss.get_epoch_error())
+    # lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1/4, patience=0, verbose=True)
+    # lrp_f = lambda: lrp.step(validloss.get_epoch_error())
+    sched = q.CosineLRwithWarmup(optim, 3 * numbats, warmup=numbats * 1)
 
     train_batch_f = partial(q.train_batch,
-                            on_before_optim_step=[lambda: torch.nn.utils.clip_grad_norm_(m.parameters(), gradnorm)])
+                            on_before_optim_step=[lambda: torch.nn.utils.clip_grad_norm_(m.parameters(), gradnorm),
+                                                  lambda: sched.step()])
     train_epoch_f = partial(q.train_epoch, model=m, dataloader=train_batches, optim=optim, losses=[loss],
                             device=device, _train_batch=train_batch_f)
-    valid_epoch_f = partial(q.test_epoch, model=valid_m, dataloader=valid_batches, losses=validlosses, device=device,
-                            on_end=[lrp_f])
+    valid_epoch_f = partial(q.test_epoch, model=valid_m, dataloader=valid_batches, losses=validlosses, device=device)
     tt.tock("created model")
     tt.tick("training")
     q.run_training(train_epoch_f, valid_epoch_f, max_epochs=epochs, validinter=1)
