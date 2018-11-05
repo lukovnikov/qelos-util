@@ -175,6 +175,7 @@ class TransformerLM(torch.nn.Module):
                                                 embedding_dropout=embedding_dropout, attention_dropout=attention_dropout,
                                                 residual_dropout=residual_dropout, relpos=relpos, noctx=True, maxlen=maxlen,
                                                 posemb=posemb)
+        q.RecDropout.convert_to_standard_in(self.transformer)
         self.wordout = q.WordLinout(dim, worddic=worddic)
         if tie_wordvecs:
             self.wordout.weight = self.wordemb.weight
@@ -231,6 +232,8 @@ def run(lr=2.5e-4,
         test=True,
         subsampleeval=10,
         wreg=1e-6,
+        lrcycle=5,
+        lrwarmup=3,
         ):
     tt = q.ticktock("script")
     device = torch.device("cpu")
@@ -280,7 +283,7 @@ def run(lr=2.5e-4,
     optim = torch.optim.Adam(m.parameters(), lr=lr, weight_decay=wreg)
     # lrp = torch.optim.lr_scheduler.ReduceLROnPlateau(optim, mode="min", factor=1/4, patience=0, verbose=True)
     # lrp_f = lambda: lrp.step(validloss.get_epoch_error())
-    sched = q.CosineLRwithWarmup(optim, 3 * numbats, warmup=numbats * 1)
+    sched = q.CosineLRwithWarmup(optim, lrcycle * numbats, warmup=lrwarmup * numbats)
 
     train_batch_f = partial(q.train_batch,
                             on_before_optim_step=[lambda: torch.nn.utils.clip_grad_norm_(m.parameters(), gradnorm),
