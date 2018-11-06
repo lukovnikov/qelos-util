@@ -11,6 +11,9 @@ __all__ = ["MultiHeadAttention", "TransformerEncoderBlock",
            "TS2S", "TS2S_arg", "WaveEmb"]
 
 
+EPS = 1e-10
+
+
 def get_sinusoid_encoding_table(seqlen, dim, start=0, padding_idx=None):
     ''' Sinusoid position encoding table, from jadore's github '''
 
@@ -252,7 +255,7 @@ class MultiHeadAttention(nn.Module):
 
 
 class PositionWiseFeedforward(nn.Module):
-    def __init__(self, indim, dim, activation=nn.ReLU, dropout=0.):  # in MLP: n_state=3072 (4 * n_embd)
+    def __init__(self, indim, dim, activation=q.GeLU, dropout=0.):  # in MLP: n_state=3072 (4 * n_embd)
         super(PositionWiseFeedforward, self).__init__()
         self.projA = nn.Linear(indim, dim)
         self.projB = nn.Linear(dim, indim)
@@ -264,7 +267,8 @@ class PositionWiseFeedforward(nn.Module):
         self.dropout = q.RecDropout(dropout, shareaxis=1)
 
     def forward(self, x):       # (batsize, seqlen, ?)
-        h = self.act(self.projA(x))
+        h = self.projA(x)
+        h = self.act(h)
         h2 = self.projB(h)
         return self.dropout(h2)
 
@@ -291,10 +295,10 @@ class TransformerEncoderBlock(nn.Module):
         self.slf_attn = MultiHeadAttention(indim, kdim=kdim, vdim=vdim, bidir=_bidir, numheads=numheads,
             attention_dropout=attention_dropout, residual_dropout=residual_dropout, scale=scale,
             maxlen=maxlen, relpos=relpos)
-        self.ln_slf = nn.LayerNorm(indim, eps=1e-12)
+        self.ln_slf = nn.LayerNorm(indim, eps=EPS)
         innerdim = 4 * indim if innerdim is None else innerdim
         self.mlp = PositionWiseFeedforward(indim, innerdim, activation=activation, dropout=residual_dropout)
-        self.ln_ff = nn.LayerNorm(indim, eps=1e-12)
+        self.ln_ff = nn.LayerNorm(indim, eps=EPS)
 
     def forward(self, x, mask=None):
         # if mask is not None:
@@ -327,7 +331,7 @@ class TransformerDecoderBlock(TransformerEncoderBlock):
             self.ctx_attn = MultiHeadAttention(indim, kdim=kdim, vdim=vdim, bidir=True, numheads=numheads,
                attention_dropout=attention_dropout, residual_dropout=residual_dropout, scale=scale,
                relpos=False)
-            self.ln_ctx = nn.LayerNorm(indim, eps=1e-12)
+            self.ln_ctx = nn.LayerNorm(indim, eps=EPS)
 
     def set_cell_mode(self, val:bool):
         self.slf_attn.set_cell_mode(val)
