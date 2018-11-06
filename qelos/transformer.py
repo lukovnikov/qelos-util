@@ -109,7 +109,6 @@ class MultiHeadAttention(nn.Module):
         self._prev_mask = None
 
     def set_cell_mode(self, val:bool):
-        # TODO: accumulate mask in cell mode
         if val is True:
             assert(self.bidir == False)
         self._cell_mode = val
@@ -272,7 +271,7 @@ class PositionWiseFeedforward(nn.Module):
 
 class TransformerEncoderBlock(nn.Module):
     """ Normal self-attention block. Used in encoders. """
-    def __init__(self, indim, kdim=None, vdim=None, numheads=None, activation=nn.ReLU,
+    def __init__(self, indim, kdim=None, vdim=None, innerdim=None, numheads=None, activation=nn.ReLU,
                  attention_dropout=0., residual_dropout=0., scale=True, _bidir=True,
                  maxlen=512, relpos=False, **kw):
         """
@@ -292,13 +291,14 @@ class TransformerEncoderBlock(nn.Module):
         self.slf_attn = MultiHeadAttention(indim, kdim=kdim, vdim=vdim, bidir=_bidir, numheads=numheads,
             attention_dropout=attention_dropout, residual_dropout=residual_dropout, scale=scale,
             maxlen=maxlen, relpos=relpos)
-        self.ln_slf = nn.LayerNorm(indim)
-        self.mlp = PositionWiseFeedforward(indim, 4 * indim, activation=activation, dropout=residual_dropout)
-        self.ln_ff = nn.LayerNorm(indim)
+        self.ln_slf = nn.LayerNorm(indim, eps=1e-12)
+        innerdim = 4 * indim if innerdim is None else innerdim
+        self.mlp = PositionWiseFeedforward(indim, innerdim, activation=activation, dropout=residual_dropout)
+        self.ln_ff = nn.LayerNorm(indim, eps=1e-12)
 
     def forward(self, x, mask=None):
-        if mask is not None:
-            x = x * mask.float().unsqueeze(-1)
+        # if mask is not None:
+        #     x = x * mask.float().unsqueeze(-1)
         # a = self.slf_attn(x, mask=mask)
         # h = self.mlp(a+x) + x
         #
@@ -312,13 +312,13 @@ class TransformerEncoderBlock(nn.Module):
 
 class TransformerDecoderBlock(TransformerEncoderBlock):
     """ Same as TransformerEncoderBlock but optionally takes a context and is not bidir."""
-    def __init__(self, indim, kdim=None, vdim=None, numheads=None, activation=nn.ReLU,
+    def __init__(self, indim, kdim=None, vdim=None, innerdim=None, numheads=None, activation=nn.ReLU,
                  attention_dropout=0., residual_dropout=0., scale=True, noctx=False,
                  maxlen=512, relpos=False, **kw):
         """
         :param noctx:   if True, no context should be given in forward().
         """
-        super(TransformerDecoderBlock, self).__init__(indim, kdim=kdim, vdim=vdim, _bidir=False, numheads=numheads,
+        super(TransformerDecoderBlock, self).__init__(indim, kdim=kdim, vdim=vdim, innerdim=innerdim, _bidir=False, numheads=numheads,
                                                       activation=activation, attention_dropout=attention_dropout, residual_dropout=residual_dropout,
                                                       scale=scale, maxlen=maxlen, relpos=relpos, **kw)
         # additional modules for attention to ctx
@@ -327,7 +327,7 @@ class TransformerDecoderBlock(TransformerEncoderBlock):
             self.ctx_attn = MultiHeadAttention(indim, kdim=kdim, vdim=vdim, bidir=True, numheads=numheads,
                attention_dropout=attention_dropout, residual_dropout=residual_dropout, scale=scale,
                relpos=False)
-            self.ln_ctx = nn.LayerNorm(indim)
+            self.ln_ctx = nn.LayerNorm(indim, eps=1e-12)
 
     def set_cell_mode(self, val:bool):
         self.slf_attn.set_cell_mode(val)
@@ -340,8 +340,8 @@ class TransformerDecoderBlock(TransformerEncoderBlock):
         :param ctxmask:    mask on the ctx (instead of mask on x) !!!     (batsize, seqlen_enc)
         :return:
         """
-        if mask is not None:
-            x = x * mask.float().unsqueeze(-1)
+        # if mask is not None:
+        #     x = x * mask.float().unsqueeze(-1)
         # if ctxmask is not None:
         #     ctx = ctx * ctxmask.float().unsqueeze(-1)     # do we need this? no
         # self attention
@@ -360,7 +360,7 @@ class TransformerDecoderBlock(TransformerEncoderBlock):
 
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, dim=512, kdim=None, vdim=None, maxlen=512, numlayers=6, numheads=8, activation=nn.ReLU,
+    def __init__(self, dim=512, kdim=None, vdim=None, innerdim=None, maxlen=512, numlayers=6, numheads=8, activation=nn.ReLU,
                  embedding_dropout=0., attention_dropout=0., residual_dropout=0., scale=True,
                  relpos=False, posemb=None, **kw):
         """
@@ -384,7 +384,7 @@ class TransformerEncoder(nn.Module):
         self.posemb = posemb
         self.embdrop = q.RecDropout(p=embedding_dropout, shareaxis=1)
         self.layers = nn.ModuleList([
-            TransformerEncoderBlock(dim, kdim=kdim, vdim=vdim, numheads=numheads, activation=activation,
+            TransformerEncoderBlock(dim, kdim=kdim, vdim=vdim, innerdim=innerdim, numheads=numheads, activation=activation,
                                     attention_dropout=attention_dropout, residual_dropout=residual_dropout,
                                     scale=scale, maxlen=maxlen, relpos=relpos)
             for _ in range(numlayers)
@@ -413,7 +413,7 @@ class TransformerEncoder(nn.Module):
 
 
 class TransformerDecoder(nn.Module):
-    def __init__(self, dim=512, kdim=None, vdim=None, maxlen=512, numlayers=6, numheads=8, activation=nn.ReLU,
+    def __init__(self, dim=512, kdim=None, vdim=None, innerdim=None, maxlen=512, numlayers=6, numheads=8, activation=nn.ReLU,
                  embedding_dropout=0., attention_dropout=0., residual_dropout=0., scale=True, noctx=False,
                  relpos=False, posemb=None, **kw):
         """
@@ -425,7 +425,7 @@ class TransformerDecoder(nn.Module):
         self.posemb = posemb
         self.embdrop = q.RecDropout(p=embedding_dropout, shareaxis=1)
         self.layers = nn.ModuleList([
-            TransformerDecoderBlock(dim, kdim=kdim, vdim=vdim, numheads=numheads, activation=activation,
+            TransformerDecoderBlock(dim, kdim=kdim, vdim=vdim, innerdim=innerdim, numheads=numheads, activation=activation,
                                     attention_dropout=attention_dropout, residual_dropout=residual_dropout,
                                     scale=scale, noctx=noctx, maxlen=maxlen, relpos=relpos)
             for _ in range(numlayers)
@@ -509,17 +509,17 @@ class TS2S(nn.Module):
 
 
 class TS2S_arg(TS2S):
-    def __init__(self, dim=512, kdim=None, vdim=None, maxlen=512, numlayers=6, numheads=8,
+    def __init__(self, dim=512, kdim=None, vdim=None, innerdim=None, maxlen=512, numlayers=6, numheads=8,
                  activation=nn.ReLU, embedding_dropout=0., attention_dropout=0., residual_dropout=0.,
                  scale=True, relpos=False, posemb=None, **kw):
         """
         See TransformerEncoder and TransformerDecoder.
         """
-        encoder = TransformerEncoder(dim=dim, kdim=kdim, vdim=vdim, maxlen=maxlen, numlayers=numlayers,
+        encoder = TransformerEncoder(dim=dim, kdim=kdim, vdim=vdim, innerdim=innerdim, maxlen=maxlen, numlayers=numlayers,
                                      numheads=numheads, activation=activation,
                                      embedding_dropout=embedding_dropout, attention_dropout=attention_dropout,
                                      residual_dropout=residual_dropout, scale=scale, relpos=relpos, posemb=posemb)
-        decoder = TransformerDecoder(dim=dim, kdim=kdim, vdim=vdim, maxlen=maxlen, numlayers=numlayers,
+        decoder = TransformerDecoder(dim=dim, kdim=kdim, vdim=vdim, innerdim=innerdim, maxlen=maxlen, numlayers=numlayers,
                                      numheads=numheads, activation=activation,
                                      embedding_dropout=embedding_dropout, attention_dropout=attention_dropout,
                                      residual_dropout=residual_dropout, scale=scale, noctx=False, relpos=relpos,
