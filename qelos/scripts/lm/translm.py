@@ -161,7 +161,7 @@ class _LMLoaderIter_Test(object):
 
 # region transformer language model
 class TransformerLM(torch.nn.Module):
-    def __init__(self, dim=512, worddic=None, numlayers=3, numheads=8, activation=torch.nn.ReLU,
+    def __init__(self, dim=512, worddic=None, numlayers=3, numheads=8, activation=q.GeLU,
                  embedding_dropout=0., attention_dropout=0., residual_dropout=0.,
                  word_dropout=0., relpos=True, tie_wordvecs=False, maxlen=512):
         super(TransformerLM, self).__init__()
@@ -251,7 +251,7 @@ def run(lr=2.5e-4,
     tt.tick("creating model")
 
     m = TransformerLM(dim=dim, worddic=D, numlayers=numlayers, numheads=numheads,
-                      activation=torch.nn.ReLU, embedding_dropout=edropout, attention_dropout=adropout,
+                      activation=q.GeLU, embedding_dropout=edropout, attention_dropout=adropout,
                       word_dropout=wdropout, residual_dropout=rdropout, relpos=relpos,
                       tie_wordvecs=tie_wordvecs, maxlen=2*seqlen).to(device)
     valid_m = TransformerLMCell(m)
