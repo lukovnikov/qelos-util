@@ -131,7 +131,7 @@ class MultiHeadAttention(nn.Module):
         """
         assert(k.size(1) == 1)
         assert(v.size(1) == 1)
-        assert(mask.size(1) == 1)
+        assert(mask is None or mask.size(1) == 1)
         if self._prev_k is None:
             assert(self._prev_v is None)
             self._prev_k, self._prev_v = k, v
@@ -400,7 +400,8 @@ class TransformerEncoder(nn.Module):
         :param mask:    optional mask (batsize, seqlen)
         :return:        (batsize, seqlen, outdim)
         """
-        x = self.embdrop(x)     # TODO: or after adding position embeddings?
+        if mask is not None:
+            x = x * mask.float().unsqueeze(-1)
 
         emb = x
         if self.posemb is not None:
@@ -408,9 +409,9 @@ class TransformerEncoder(nn.Module):
             xpos = torch.arange(0, x.size(1), device=x.device).unsqueeze(0)
             posemb, *_ = self.posemb(xpos)
             emb = x + posemb
+        emb = self.embdrop(emb)
 
         h = emb
-
         for layer in self.layers:
             h = layer(h, mask=mask)
         return h
@@ -454,7 +455,8 @@ class TransformerDecoder(nn.Module):
         :param ctxmask:     (batsize, seqlen_ctx)
         :return:
         """
-        x = self.embdrop(x)       # TODO: or after adding position embeddings?
+        if mask is not None:
+            x = x * mask.float().unsqueeze(-1)
 
         emb = x
         if self.posemb is not None:
@@ -462,9 +464,9 @@ class TransformerDecoder(nn.Module):
             xpos = torch.arange(0, x.size(1), device=x.device).unsqueeze(0) + self._posoffset
             posemb, *_ = self.posemb(xpos)
             emb = emb + posemb
+        emb = self.embdrop(emb)
 
         h = emb
-
         for layer in self.layers:
             h = layer(h, ctx, mask=mask, ctxmask=ctxmask)
 

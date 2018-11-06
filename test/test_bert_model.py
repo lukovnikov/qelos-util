@@ -1,15 +1,15 @@
 from unittest import TestCase
 import numpy as np
 import torch
-import grouch
+import qelos as q
 
 
 class TestTransformerBERT(TestCase):
     def test_bert_loaded(self):
         config_path="../data/bert/bert-base/bert_config.json"
         ckpt_path="../data/bert/bert-base/bert_model.ckpt"
-        config = grouch.TransformerBERT.load_config(config_path)
-        m = grouch.TransformerBERT.init_from_config(config)
+        config = q.TransformerBERT.load_config(config_path)
+        m = q.TransformerBERT.init_from_config(config)
         m.load_weights_from_tf_checkpoint(ckpt_path)
         m.eval()
         print(m)

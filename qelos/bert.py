@@ -1,7 +1,6 @@
 import qelos as q
 import torch
 import numpy as np
-import tensorflow as tf
 import six
 import copy
 import json
@@ -222,6 +221,7 @@ class TransformerBERT(torch.nn.Module):
 
     def load_weights_from_tf_checkpoint(self, ckpt_path):
         print("Loading tensorflow BERT weights from {}".format(ckpt_path))
+        import tensorflow as tf
 
         # region from Hugging Face BERT
         init_vars = tf.train.list_variables(ckpt_path)
