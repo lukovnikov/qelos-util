@@ -2,6 +2,8 @@ import qelos as q
 import json
 import re
 import numpy as np
+import collections
+import random
 
 
 __all__ = ["WordPieceMatrix", "BERTMatrixSingle", "BERTMatrixPair"]
@@ -138,11 +140,14 @@ def test_load(vocabpath):
     print("\n".join(bms[0]))
     print("\n".join(bms[1]))
     print("\n".join(bms[2]))
+    return bms
 
 
 def run(vocabpath="../../data/bert/bert-base/vocab.txt"):
-    ret = test_load(vocabpath)
-    return ret
+    bms = test_load(vocabpath)
+    # return ret
+    rng = random.Random()
+    create_masked_lm_predictions(bms[1][0].split(), 0.15, 3, set(bms.D.keys()), rng)
 
 
 if __name__ == '__main__':

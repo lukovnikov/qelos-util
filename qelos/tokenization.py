@@ -121,6 +121,8 @@ class FullTokenizer(object):
 
 class BasicTokenizer(object):
     """Runs basic tokenization (punctuation splitting, lower casing, etc.)."""
+    unk_token = "[UNK]"
+    protected_tokens = {unk_token}
 
     def __init__(self, do_lower_case=True):
         """Constructs a BasicTokenizer.
@@ -137,10 +139,13 @@ class BasicTokenizer(object):
         orig_tokens = whitespace_tokenize(text)
         split_tokens = []
         for token in orig_tokens:
-            if self.do_lower_case:
-                token = token.lower()
-                token = self._run_strip_accents(token)
-            split_tokens.extend(self._run_split_on_punc(token))
+            if not token in self.protected_tokens:
+                if self.do_lower_case:
+                    token = token.lower()
+                    token = self._run_strip_accents(token)
+                split_tokens.extend(self._run_split_on_punc(token))
+            else:
+                split_tokens.append(token)
 
         output_tokens = whitespace_tokenize(" ".join(split_tokens))
         return output_tokens
