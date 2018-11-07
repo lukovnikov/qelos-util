@@ -7,3 +7,4 @@ from qelos.rnn import *
 from qelos.train import *
 from qelos.loss import *
 from qelos.bert import *
+import qelos.tokenization as tokens
