@@ -10,7 +10,7 @@ class TestTransformerBERT(TestCase):
         ckpt_path="../data/bert/bert-base/bert_model.ckpt"
         config = q.TransformerBERT.load_config(config_path)
         m = q.TransformerBERT.init_from_config(config)
-        m.load_weights_from_tf_checkpoint(ckpt_path)
+        mlmpred = m.load_weights_from_tf_checkpoint(ckpt_path, make_mlm_pred=True)
         m.eval()
         print(m)
         input_ids = torch.LongTensor([[31, 51, 99], [15, 5, 0]])

@@ -181,11 +181,28 @@ class TransformerEncoder(torch.nn.Module):
         return all_h
 
 
+class BERTMLM(torch.nn.Module):
+    def __init__(self, dim, vocab_size, hidden_act=q.GeLU):
+        super(BERTMLM, self).__init__()
+        self.transform = torch.nn.Linear(dim, dim, bias=True)
+        self.act = hidden_act()
+        self.ln = torch.nn.LayerNorm(dim, eps=1e-10)
+        self.out = torch.nn.Linear(dim, vocab_size, bias=True)
+
+    def forward(self, x):
+        h = self.transform(x)
+        h = self.act(h)
+        h = self.ln(h)
+        h = self.out(h)
+        return h
+
+
 class TransformerBERT(torch.nn.Module):
     def __init__(self, dim=768, numwords=-1, numlayers=12, numheads=12, innerdim=3072, hidden_act=q.GeLU,
                  dropout=0.1, attn_dropout=0.1, maxlen=512, numtypes=16, init_range=0.02):
         super(TransformerBERT, self).__init__()
         self.emb = BERTEmbeddings(dim, numwords, maxlen, numtypes=numtypes, dropout=dropout)
+        self.hidden_act = hidden_act
         self.encoder = TransformerEncoder(dim=dim, innerdim=innerdim, maxlen=maxlen, numlayers=numlayers,
                                             numheads=numheads, activation=hidden_act, embedding_dropout=dropout,
                                             residual_dropout=dropout, attention_dropout=attn_dropout,
@@ -219,7 +236,7 @@ class TransformerBERT(torch.nn.Module):
         pooled_output = self.pooler(sequence_output)
         return all_h, pooled_output
 
-    def load_weights_from_tf_checkpoint(self, ckpt_path):
+    def load_weights_from_tf_checkpoint(self, ckpt_path, make_mlm_pred=False):
         print("Loading tensorflow BERT weights from {}".format(ckpt_path))
         import tensorflow as tf
 
@@ -278,27 +295,59 @@ class TransformerBERT(torch.nn.Module):
             return a
 
         for name, array in zip(names, arrays):
-            name = name[5:]  # skip "bert/"
             print("Loading {}".format(name))
-            name = mapname(name)
-            name = name.split('/')
-            if name[0] in ['redictions', 'eq_relationship']:
+            if name[:5] == "bert":
+                name = name[5:]  # skip "bert/"
+                name = mapname(name)
+                name = name.split('/')
+                pointer = self
+                for m_name in name:
+                    getname = m_name
+                    if m_name == "kernel":
+                        getname = "weight"
+                    pointer = getattr(pointer, getname)
+                if m_name == 'kernel':
+                    array = np.transpose(array)
+                try:
+                    assert pointer.shape == array.shape
+                except AssertionError as e:
+                    e.args += (pointer.shape, array.shape)
+                    raise
+                pointer.data = torch.from_numpy(array)
+            else:
                 print("Skipping")
-                continue
-            pointer = self
-            for m_name in name:
-                getname = m_name
-                if m_name == "kernel":
-                    getname = "weight"
-                pointer = getattr(pointer, getname)
-            if m_name == 'kernel':
-                array = np.transpose(array)
-            try:
-                assert pointer.shape == array.shape
-            except AssertionError as e:
-                e.args += (pointer.shape, array.shape)
-                raise
-            pointer.data = torch.from_numpy(array)
+
+        if make_mlm_pred:
+            vocsize, dim = self.emb.word_embeddings.weight.shape
+            mlm_pred = BERTMLM(dim, vocsize, hidden_act=self.hidden_act)
+            print("Loading MLM prediction model")
+            out_weights = self.emb.word_embeddings.weight   # output layer weights tied to embeddings
+            mlm_pred.out.weight = out_weights   # tie output weights to embeddings
+
+            # load prefinal dense weight and bias, layernorm and out_bias from tf ckpt
+            for name, array in zip(names, arrays):
+                if len(name) > len("cls/predictions") \
+                        and name[:len("cls/predictions")] == "cls/predictions":
+                    print("Loading {}".format(name))
+                    array = torch.from_numpy(array)
+                    if name == "cls/predictions/output_bias":
+                        mlm_pred.out.bias.data = array
+                    elif re.match("cls/predictions/transform/.+", name):
+                        name = name[26:]
+                        if name == "LayerNorm/beta":
+                            mlm_pred.ln.bias.data = array
+                        elif name == "LayerNorm/gamma":
+                            mlm_pred.ln.weight.data = array
+                        elif name == "dense/kernel":
+                            mlm_pred.transform.weight.data = array.t()
+                        elif name == "dense/bias":
+                            mlm_pred.transform.bias.data = array
+                        else:
+                            raise q.SumTingWongException("unknown name: {}".format(name))
+                    else:
+                        raise q.SumTingWongException("unknown name: {}".format(name))
+            return mlm_pred
+
 
     @classmethod
     def init_from_config(cls, config:BertConfig):
