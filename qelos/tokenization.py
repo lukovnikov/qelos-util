@@ -121,7 +121,7 @@ class FullTokenizer(object):
 
 class BasicTokenizer(object):
     """Runs basic tokenization (punctuation splitting, lower casing, etc.)."""
-    unk_token = "[UNK]"
+    unk_token = "[UNK]"     # in case [UNK] already occurs in text
     protected_tokens = {unk_token}
 
     def __init__(self, do_lower_case=True):
