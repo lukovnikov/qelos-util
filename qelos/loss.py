@@ -10,7 +10,7 @@ import warnings
 EPS = 1e-6
 
 
-__all__ = ["Accuracy", "SeqAccuracy", "SeqElemAccuracy", "MacroBLEU",
+__all__ = ["Accuracy", "SeqAccuracy", "SeqElemAccuracy", "MacroBLEU", "nan2zero", "inf2zero",
            "SmoothedCELoss", "CELoss", "DistillLoss", "LinearLoss", "SelectedLinearLoss"]
 
 

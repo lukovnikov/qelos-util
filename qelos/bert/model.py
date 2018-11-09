@@ -5,6 +5,7 @@ import six
 import copy
 import json
 import re
+import os
 
 
 """ Heavily borrowed from Hugging Face BERT """
@@ -209,6 +210,7 @@ class TransformerBERT(torch.nn.Module):
                                             relpos=False, posemb=None, scale=True)
         q.RecDropout.convert_to_standard_in(self.encoder)
         self.pooler = BERTPooler(dim)
+        self.D = None
 
     def forward(self, input_ids, token_type_ids=None, mask=None):
         """ --> adapted from Hugging Face BERT """
@@ -296,7 +298,7 @@ class TransformerBERT(torch.nn.Module):
 
         for name, array in zip(names, arrays):
             print("Loading {}".format(name))
-            if name[:5] == "bert":
+            if name[:4] == "bert":
                 name = name[5:]  # skip "bert/"
                 name = mapname(name)
                 name = name.split('/')
@@ -369,6 +371,25 @@ class TransformerBERT(torch.nn.Module):
     @staticmethod
     def load_config(path):
         return BertConfig.from_json_file(path)
+
+    @classmethod
+    def load_from_dir(cls, dir="../data/bert/bert-base/", make_mlm_pred=False, cache=False):
+        """ Loads tf-pretrained bert from given directory. If make_mlm_pred is True, also returns MLM output layer """
+        config_path = os.path.join(dir, "bert_config.json")
+        ckpt_path = os.path.join(dir, "bert_model.ckpt")
+        vocab_path = os.path.join(dir, "vocab.txt")
+        config = BertConfig.from_json_file(config_path)
+        # TODO: cache
+        m = TransformerBERT.init_from_config(config)
+        mlm_pred = m.load_weights_from_tf_checkpoint(ckpt_path, make_mlm_pred=make_mlm_pred)
+        # attach vocab on m
+        vocab = q.tokens.load_vocab(vocab_path)
+        m.D = vocab
+        if make_mlm_pred:
+            return m, mlm_pred
+        else:
+            return m
+
 
 
 def run(config_path="../data/bert/bert-base/bert_config.json",
