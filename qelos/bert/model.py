@@ -239,8 +239,9 @@ class TransformerBERT(torch.nn.Module):
         pooled_output = self.pooler(sequence_output)
         return all_h, pooled_output
 
-    def load_weights_from_tf_checkpoint(self, ckpt_path, make_mlm_pred=False):
-        print("Loading tensorflow BERT weights from {}".format(ckpt_path))
+    def load_weights_from_tf_checkpoint(self, ckpt_path, make_mlm_pred=False, verbose=True):
+        if verbose:
+            print("Loading tensorflow BERT weights from {}".format(ckpt_path))
         import tensorflow as tf
 
         # region from Hugging Face BERT
@@ -248,9 +249,11 @@ class TransformerBERT(torch.nn.Module):
         names = []
         arrays = []
         for name, shape in init_vars:
-            print("Loading {} with shape {}".format(name, shape))
+            if verbose:
+                print("Loading {} with shape {}".format(name, shape))
             array = tf.train.load_variable(ckpt_path, name)
-            print("Numpy array shape {}".format(array.shape))
+            if verbose:
+                print("Numpy array shape {}".format(array.shape))
             names.append(name)
             arrays.append(array)
         # endregion
@@ -298,7 +301,8 @@ class TransformerBERT(torch.nn.Module):
             return a
 
         for name, array in zip(names, arrays):
-            print("Loading {}".format(name))
+            if verbose:
+                print("Loading {}".format(name))
             if name[:4] == "bert":
                 name = name[5:]  # skip "bert/"
                 name = mapname(name)
@@ -318,12 +322,14 @@ class TransformerBERT(torch.nn.Module):
                     raise
                 pointer.data = torch.from_numpy(array)
             else:
-                print("Skipping")
+                if verbose:
+                    print("Skipping")
 
         if make_mlm_pred:
             vocsize, dim = self.emb.word_embeddings.weight.shape
             mlm_pred = BERTMLM(dim, vocsize, hidden_act=self.hidden_act)
-            print("Loading MLM prediction model")
+            if verbose:
+                print("Loading MLM prediction model")
             out_weights = self.emb.word_embeddings.weight   # output layer weights tied to embeddings
             mlm_pred.out.weight = out_weights   # tie output weights to embeddings
 
@@ -331,7 +337,8 @@ class TransformerBERT(torch.nn.Module):
             for name, array in zip(names, arrays):
                 if len(name) > len("cls/predictions") \
                         and name[:len("cls/predictions")] == "cls/predictions":
-                    print("Loading {}".format(name))
+                    if verbose:
+                        print("Loading {}".format(name))
                     array = torch.from_numpy(array)
                     if name == "cls/predictions/output_bias":
                         mlm_pred.out.bias.data = array
@@ -374,7 +381,7 @@ class TransformerBERT(torch.nn.Module):
         return BertConfig.from_json_file(path)
 
     @classmethod
-    def load_from_dir(cls, dir="../data/bert/bert-base/", make_mlm_pred=False, cache=False):
+    def load_from_dir(cls, dir="../data/bert/bert-base/", make_mlm_pred=False, cache=False, verbose=True):
         """ Loads tf-pretrained bert from given directory. If make_mlm_pred is True, also returns MLM output layer """
         config_path = os.path.join(dir, "bert_config.json")
         ckpt_path = os.path.join(dir, "bert_model.ckpt")
@@ -382,7 +389,7 @@ class TransformerBERT(torch.nn.Module):
         config = BertConfig.from_json_file(config_path)
         # TODO: cache
         m = TransformerBERT.init_from_config(config)
-        mlm_pred = m.load_weights_from_tf_checkpoint(ckpt_path, make_mlm_pred=make_mlm_pred)
+        mlm_pred = m.load_weights_from_tf_checkpoint(ckpt_path, make_mlm_pred=make_mlm_pred, verbose=verbose)
         # attach vocab on m
         vocab = q.tokens.load_vocab(vocab_path)
         m.D = vocab
