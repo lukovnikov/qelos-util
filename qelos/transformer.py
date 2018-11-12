@@ -111,6 +111,13 @@ class MultiHeadAttention(nn.Module):
         self._prev_v = None
         self._prev_mask = None
 
+    def set_bidir(self, bidir):
+        if isinstance(self, MultiHeadAttention):
+            self.bidir = bidir
+        for submodule in self.modules():
+            if isinstance(submodule, MultiHeadAttention):
+                submodule.bidir = bidir
+
     def set_cell_mode(self, val:bool):
         if val is True:
             assert(self.bidir == False)

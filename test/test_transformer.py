@@ -303,6 +303,15 @@ class TestEncoderBlock(TestCase):
 
         print(x.grad.norm(1, 2))
 
+    def test_set_bidir(self):
+        indim = 10
+        kdim = 12
+        vdim = 15
+        numheads = 3
+        m = TransformerEncoderBlock(indim, kdim=kdim, vdim=vdim, bidir=True,
+                         numheads=numheads, activation=q.GeLU)
+        q.MultiHeadAttention.set_bidir(m, False)
+
 
 class TestDecoderBlock(TestCase):
     def test_it(self):
@@ -663,5 +672,4 @@ class TestTS2S(TestCase):
         print((x.grad - xgrad).norm(1))
         self.assertTrue(np.allclose(ygrad.detach().numpy(), y.grad.detach().numpy(), atol=1e-6))
         self.assertTrue(np.allclose(xgrad.detach().numpy(), x.grad.detach().numpy(), atol=1e-5))
-
 
