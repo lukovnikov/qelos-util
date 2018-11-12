@@ -202,6 +202,7 @@ class TransformerBERT(torch.nn.Module):
     def __init__(self, dim=768, numwords=-1, numlayers=12, numheads=12, innerdim=3072, hidden_act=q.GeLU,
                  dropout=0.1, attn_dropout=0.1, maxlen=512, numtypes=16, init_range=0.02):
         super(TransformerBERT, self).__init__()
+        self.dim, dim
         self.emb = BERTEmbeddings(dim, numwords, maxlen, numtypes=numtypes, dropout=dropout)
         self.hidden_act = hidden_act
         self.encoder = TransformerEncoder(dim=dim, innerdim=innerdim, maxlen=maxlen, numlayers=numlayers,
