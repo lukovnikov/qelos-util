@@ -11,7 +11,7 @@ import os
 """ Heavily borrowed from Hugging Face BERT """
 
 
-__all__ = ["TransformerBERT", "BertConfig"]
+__all__ = ["TransformerBERT", "BertConfig", "BERTClassifier"]
 
 
 class BertConfig(object):
@@ -308,7 +308,10 @@ class TransformerBERT(torch.nn.Module):
         for name, array in zip(names, arrays):
             if verbose:
                 print("Loading {}".format(name))
-            if name[:4] == "bert":
+            if re.match('.*(adam_v|adam_m)$', name):
+                if verbose:
+                    print("Skipping")
+            elif name[:4] == "bert":
                 name = name[5:]  # skip "bert/"
                 name = mapname(name)
                 name = name.split('/')
@@ -340,10 +343,12 @@ class TransformerBERT(torch.nn.Module):
 
             # load prefinal dense weight and bias, layernorm and out_bias from tf ckpt
             for name, array in zip(names, arrays):
-                if len(name) > len("cls/predictions") \
-                        and name[:len("cls/predictions")] == "cls/predictions":
+                if re.match("cls/predictions/.+", name):
                     if verbose:
                         print("Loading {}".format(name))
+                    if re.match('.*(adam_v|adam_m)$', name):
+                        if verbose:
+                            print("Skipping")
                     array = torch.from_numpy(array)
                     if name == "cls/predictions/output_bias":
                         mlm_pred.out.bias.data = array

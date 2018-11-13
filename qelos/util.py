@@ -15,6 +15,7 @@ import numpy as np
 import unidecode
 from IPython import embed
 import torch
+from functools import partial
 
 import qelos as q
 from torch.utils.data import Dataset, DataLoader
@@ -22,6 +23,7 @@ from torch.utils.data import Dataset, DataLoader
 
 __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_unpack", "iscuda", "hyperparam", "v",
            "intercat", "masked_mean", "tensor_dataset", "datacat", "dataload", "datasplit",
+           "RandomContiguousBatchSampler", "padclip_collate_fn",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
            "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of"]
 
@@ -211,6 +213,54 @@ def masked_mean(x, dim=None, mask=None, keepdim=False):
 
 
 # region data-related utils
+class RandomContiguousBatchSampler(torch.utils.data.sampler.BatchSampler):
+    """
+    Samples contiguous batches of elements, choosing a random starting point every time.
+    """
+    def __init__(self, numexamples, batch_size):
+        self.numexamples = numexamples
+        self.batsize = batch_size
+
+    def __iter__(self):
+        randids = torch.randperm(len(self))
+        batch = []
+        for idx in randids:
+            idx = idx.item()
+            for i in range(idx * self.batsize,
+               min((idx + 1) * self.batsize, self.numexamples)):
+                batch.append(torch.tensor(i))
+            yield batch
+            batch = []
+
+    def __len__(self):
+        return self.numexamples // self.batsize + int(self.numexamples % self.batsize > 0)
+
+
+def padclip_collate_fn(batch, padidx=0):  # batch is list of things  # TODO: 3D
+    batch = torch.utils.data.dataloader.default_collate(batch)
+    if not isinstance(batch, collections.Sequence):
+        batch = [batch,]
+    newbatch = []
+    ret = recmap(batch, partial(_padclip_collate_fn_rec, padidx=padidx))
+    return ret
+
+
+def _padclip_collate_fn_rec(batch_e, padidx=0):
+    if isinstance(batch_e, torch.Tensor) \
+            and batch_e.dtype in (torch.int64, torch.int32, torch.int16):
+        if batch_e.dim() != 2:
+            raise q.SumTingWongException("only 2D integers are supported, got {}D".format(batch_e.dim()))
+        lens = (batch_e != padidx).long().sum(-2)
+        lens = (lens > 0).long()
+        arng = torch.arange(lens.size(-1)).to(lens.device)
+        _, i = (lens * arng).max(0)
+        batch_e = batch_e[:, :i+1]
+        return batch_e
+    else:
+        return batch_e
+
+
+
 def inf_batches(dataloader, with_info=True):
     """
     iteration over this produces infinite batches from the dataloader
