@@ -16,6 +16,50 @@ class TestBucketRandomSampler(TestCase):
         self.assertTrue(len(allids) == len(set(allids)))            # all ids unique
 
 
+class TestPadClip(TestCase):
+    def test_it(self):
+        x = torch.randint(1, 5, (5, 10)).long()
+        # print(x)
+        x[0, 3:] = 0
+        x[1, 4:] = 0
+        x[2, 7:] = 0
+        x[3, 0:] = 0
+        x[4, 5:] = 0
+        print(x)
+        y = q.pad_clip(x)
+        print(y)
+        self.assertEqual(y.size(), (5, 7))
+        self.assertTrue((x[:, :7] == y).all().item() == 1)
+
+    def test_it_3D(self):
+        x = torch.randint(1, 5, (4, 5, 10)).long()
+        # print(x)
+        x[:, 0, 3:] = 0
+        x[:, 1, 4:] = 0
+        x[:, 2, 7:] = 0
+        x[:, 3, 0:] = 0
+        x[:, 4, 5:] = 0
+        print(x)
+        y = q.pad_clip(x)
+        print(y)
+        self.assertEqual(y.size(), (4, 5, 7))
+        self.assertTrue((x[:, :, :7] == y).all().item() == 1)
+
+    def test_it_4D(self):
+        x = torch.randint(1, 5, (3, 4, 5, 10)).long()
+        # print(x)
+        x[:, :, 0, 3:] = 0
+        x[:, :, 1, 4:] = 0
+        x[:, :, 2, 7:] = 0
+        x[:, :, 3, 0:] = 0
+        x[:, :, 4, 5:] = 0
+        print(x)
+        y = q.pad_clip(x)
+        print(y)
+        self.assertEqual(y.size(), (3, 4, 5, 7))
+        self.assertTrue((x[:, :, :, :7] == y).all().item() == 1)
+
+
 class TestPadclipCollate(TestCase):
     def test_it(self):
         x = torch.randint(1, 5, (5, 10)).long()
@@ -29,6 +73,7 @@ class TestPadclipCollate(TestCase):
         y = q.padclip_collate_fn(list(zip([xe.squeeze(0) for xe in x.split(1)], [xe.squeeze(0) for xe in x.split(1)])))
         print(y)
         self.assertEqual(y[0].size(), (5, 7))
+        self.assertTrue((x[:, :7] == y[0]).all().item() == 1)
 
     def test_it_3D(self):
         x = torch.randint(1, 5, (5, 1, 10)).long()
@@ -39,10 +84,10 @@ class TestPadclipCollate(TestCase):
         x[3, 0, 0:] = 0
         x[4, 0, 5:] = 0
         print(x)
-        with self.assertRaises(q.SumTingWongException):
-            y = q.padclip_collate_fn(list(zip([xe.squeeze(0) for xe in x.split(1)], [xe.squeeze(0) for xe in x.split(1)])))
-        # print(y)
-        # self.assertEqual(y[0].size(), (5, 1, 7))
+        y = q.padclip_collate_fn(list(zip([xe.squeeze(0) for xe in x.split(1)], [xe.squeeze(0) for xe in x.split(1)])))
+        print(y)
+        self.assertEqual(y[0].size(), (5, 1, 7))
+        self.assertTrue((x[:, :, :7] == y[0]).all().item() == 1)
 
 
 

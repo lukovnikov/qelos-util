@@ -24,7 +24,7 @@ import random
 
 __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_unpack", "iscuda", "hyperparam", "v",
            "intercat", "masked_mean", "tensor_dataset", "datacat", "dataload", "datasplit",
-           "BucketedRandomSampler", "padclip_collate_fn",
+           "BucketedRandomSampler", "padclip_collate_fn", "pad_clip",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
            "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of"]
 
@@ -293,14 +293,7 @@ def padclip_collate_fn(batch, padidx=0):  # batch is list of things  # TODO: 3D
 def _padclip_collate_fn_rec(batch_e, padidx=0):
     if isinstance(batch_e, torch.Tensor) \
             and batch_e.dtype in (torch.int64, torch.int32, torch.int16):
-        if batch_e.dim() != 2:
-            raise q.SumTingWongException("only 2D integers are supported, got {}D".format(batch_e.dim()))
-        lens = (batch_e != padidx).long().sum(-2)
-        lens = (lens > 0).long()
-        arng = torch.arange(lens.size(-1)).to(lens.device)
-        _, i = (lens * arng).max(0)
-        batch_e = batch_e[:, :i+1]
-        return batch_e
+        return pad_clip(batch_e, padidx=padidx)
     else:
         return batch_e
 
@@ -313,7 +306,11 @@ def pad_clip(tensor, padidx=0):
         lens = (tensor != padidx).long().sum(-2)
         lens = (lens > 0).long()
         arng = torch.arange(lens.size(-1)).to(lens.device)
-        _, i = (lens * arng).max(0)
+        while lens.dim() > arng.dim():
+            arng = arng.unsqueeze(0)
+        i = lens * arng
+        while i.dim() > 0:
+            i, _ = i.max(0)
         slices = [slice(None, None, None) for _ in range(tensor.dim() - 1)] \
                  + [slice(None, i+1, None)]
         ret = tensor[tuple(slices)]
