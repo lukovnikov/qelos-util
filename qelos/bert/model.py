@@ -203,6 +203,9 @@ class TransformerBERT(torch.nn.Module):
                  dropout=0.1, attn_dropout=0.1, maxlen=512, numtypes=16, init_range=0.02):
         super(TransformerBERT, self).__init__()
         self.dim = dim
+        self.init_range = init_range
+        self.dropout = dropout
+        self.attn_dropout = attn_dropout
         self.emb = BERTEmbeddings(dim, numwords, maxlen, numtypes=numtypes, dropout=dropout)
         self.hidden_act = hidden_act
         self.encoder = TransformerEncoder(dim=dim, innerdim=innerdim, maxlen=maxlen, numlayers=numlayers,
@@ -217,6 +220,8 @@ class TransformerBERT(torch.nn.Module):
         """ --> adapted from Hugging Face BERT """
         if token_type_ids is None:
             token_type_ids = torch.zeros_like(input_ids)
+        if mask is None:
+            mask = torch.ones_like(input_ids)
 
         # We create a 3D attention mask from a 2D tensor mask.
         # Sizes are [batch_size, 1, 1, from_seq_length]
@@ -374,6 +379,7 @@ class TransformerBERT(torch.nn.Module):
                   maxlen=config.max_position_embeddings,
                   numtypes=config.type_vocab_size,
                   init_range=config.initializer_range)
+        ret._config = config
         return ret
 
     @staticmethod
@@ -397,6 +403,28 @@ class TransformerBERT(torch.nn.Module):
             return m, mlm_pred
         else:
             return m
+
+
+class BERTClassifier(torch.nn.Module):
+    def __init__(self, bert, numout):
+        """
+        :param bert:        a TransformerBERT
+        :param numout:      number of output classes
+        """
+        self.bert = bert
+        self.dropout = torch.nn.Dropout(p=bert.dropout)
+        self.lin = torch.nn.Linear(bert.dim, numout)
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        torch.nn.init.normal_(self.lin.weight, 0, self.bert.init_range)
+        torch.nn.init.zeros_(self.lin.bias)
+
+    def forward(self, inpids, typeids=None, padmask=None):
+        _, poolout = self.bert(inpids, typeids, padmask)
+        poolout = self.dropout(poolout)
+        logits = self.lin(poolout)
+        return logits
 
 
 
