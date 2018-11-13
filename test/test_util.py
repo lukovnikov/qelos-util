@@ -3,18 +3,14 @@ import qelos as q
 import torch
 
 
-class TestRandomContiguousBatchSampler(TestCase):
+class TestBucketRandomSampler(TestCase):
     def test_indexes(self):
-        bs = q.RandomContiguousBatchSampler(500, 17)
+        bs = q.BucketedRandomSampler(500, 11, 17)
         allids = []
         for x in bs:
             print(len(x))
-            prevxe = None
             for xe in x:
                 allids.append(xe.item())
-                if prevxe is not None:
-                    self.assertTrue(xe == prevxe + 1)               # contiguous batches
-                prevxe = xe
         print(len(allids))
         self.assertTrue(len(set(range(500)) - set(allids)) == 0)    # all ids covered
         self.assertTrue(len(allids) == len(set(allids)))            # all ids unique

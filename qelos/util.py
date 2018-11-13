@@ -19,11 +19,12 @@ from functools import partial
 
 import qelos as q
 from torch.utils.data import Dataset, DataLoader
+import random
 
 
 __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_unpack", "iscuda", "hyperparam", "v",
            "intercat", "masked_mean", "tensor_dataset", "datacat", "dataload", "datasplit",
-           "RandomContiguousBatchSampler", "padclip_collate_fn",
+           "BucketedRandomSampler", "padclip_collate_fn",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
            "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of"]
 
@@ -213,11 +214,12 @@ def masked_mean(x, dim=None, mask=None, keepdim=False):
 
 
 # region data-related utils
-class RandomContiguousBatchSampler(torch.utils.data.sampler.BatchSampler):
+class RandomContiguousBatchSampler(torch.utils.data.sampler.Sampler):
     """
     Samples contiguous batches of elements, choosing a random starting point every time.
     """
     def __init__(self, numexamples, batch_size):
+        super(RandomContiguousBatchSampler, self).__init__(None)
         self.numexamples = numexamples
         self.batsize = batch_size
 
@@ -234,6 +236,49 @@ class RandomContiguousBatchSampler(torch.utils.data.sampler.BatchSampler):
 
     def __len__(self):
         return self.numexamples // self.batsize + int(self.numexamples % self.batsize > 0)
+
+
+class BucketedRandomSampler(torch.utils.data.sampler.Sampler):
+    """
+    Assumes examples are sorted by length.
+    Divides numexamples into numbuckets buckets evenly.
+    First chooses which bucket to sample from, then samples a batch only from that bucket.
+    Best to be used with padclip collate fn.
+    """
+    def __init__(self, numexamples, numbuckets, batch_size):
+        super(BucketedRandomSampler, self).__init__(None)
+        self.numexamples, self.numbuckets, self.batsize = numexamples, numbuckets, batch_size
+        # divide example ids into buckets
+        allids = range(self.numexamples)
+        bucketlen = numexamples / numbuckets
+        buckets = []
+        buckets.append([])
+        acc = bucketlen
+        for id in allids:
+            if round(acc) == 0:
+                buckets.append([])
+                acc += bucketlen
+            buckets[-1].append(id)
+            acc -= 1
+        self.buckets = buckets
+
+    def __iter__(self):
+        # prepare batches
+        batches = []
+        for bucket in self.buckets:
+            random.shuffle(bucket)
+            batches.append([])
+            for id in bucket:
+                if len(batches[-1]) == self.batsize:
+                    batches.append([])
+                batches[-1].append(torch.tensor(id))
+        batchids = list(range(len(batches)))
+        random.shuffle(batchids)
+        for batchid in batchids:
+            outb = batches[batchid]
+            outb = sorted(outb, reverse=True)
+            yield outb
+
 
 
 def padclip_collate_fn(batch, padidx=0):  # batch is list of things  # TODO: 3D
@@ -258,6 +303,21 @@ def _padclip_collate_fn_rec(batch_e, padidx=0):
         return batch_e
     else:
         return batch_e
+
+
+def pad_clip(tensor, padidx=0):
+    if isinstance(tensor, torch.Tensor):
+        assert(tensor.dtype in (torch.int64, torch.int32, torch.int16))
+        # if tensor.dim() != 2:
+        #     raise q.SumTingWongException("only 2D integers are supported, got {}D".format(batch_e.dim()))
+        lens = (tensor != padidx).long().sum(-2)
+        lens = (lens > 0).long()
+        arng = torch.arange(lens.size(-1)).to(lens.device)
+        _, i = (lens * arng).max(0)
+        slices = [slice(None, None, None) for _ in range(tensor.dim() - 1)] \
+                 + [slice(None, i+1, None)]
+        ret = tensor[tuple(slices)]
+        return ret
 
 
 
