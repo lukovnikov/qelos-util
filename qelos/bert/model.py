@@ -411,7 +411,7 @@ class TransformerBERT(torch.nn.Module):
 
 
 class BERTClassifier(torch.nn.Module):
-    def __init__(self, bert, numout):
+    def __init__(self, bert, numout, only_head=False):
         """
         :param bert:        a TransformerBERT
         :param numout:      number of output classes
@@ -420,6 +420,7 @@ class BERTClassifier(torch.nn.Module):
         self.bert = bert
         self.dropout = torch.nn.Dropout(p=bert.dropout)
         self.lin = torch.nn.Linear(bert.dim, numout)
+        self.only_head = only_head
         self.reset_parameters()
 
     def reset_parameters(self):
@@ -427,7 +428,11 @@ class BERTClassifier(torch.nn.Module):
         torch.nn.init.zeros_(self.lin.bias)
 
     def forward(self, inpids, typeids=None, padmask=None):
-        _, poolout = self.bert(inpids, typeids, padmask)
+        if self.only_head:
+            with torch.no_grad():
+                _, poolout = self.bert(inpids, typeids, padmask)
+        else:
+            _, poolout = self.bert(inpids, typeids, padmask)
         poolout = self.dropout(poolout)
         logits = self.lin(poolout)
         return logits
