@@ -524,7 +524,7 @@ def isstring(x):
     return isinstance(x, str)
 
 
-class StringMatrix():
+class StringMatrix():       # TODO: use csr_matrix here
     protectedwords = ["<MASK>", "<RARE>", "<START>", "<END>"]
 
     def __init__(self, maxlen=None, freqcutoff=0, topnwords=None, indicate_start_end=False, indicate_start=False, indicate_end=False):

@@ -416,6 +416,7 @@ class BERTClassifier(torch.nn.Module):
         :param bert:        a TransformerBERT
         :param numout:      number of output classes
         """
+        super(BERTClassifier, self).__init__()
         self.bert = bert
         self.dropout = torch.nn.Dropout(p=bert.dropout)
         self.lin = torch.nn.Linear(bert.dim, numout)

@@ -88,7 +88,7 @@ def inf2zero(x):
 class DiscreteLoss(torch.nn.Module):
     """ Loss with ignore_index(es), provides default implementation of _get_ignore_mask """
     def __init__(self, size_average=True, ignore_index=None, **kw):
-        super(DiscreteLoss, self).__init__(size_average=size_average, **kw)
+        super(DiscreteLoss, self).__init__(**kw)
         if ignore_index is not None:
             if not q.issequence(ignore_index):
                 self.ignore_indices = [ignore_index]
@@ -98,7 +98,7 @@ class DiscreteLoss(torch.nn.Module):
 
     @staticmethod
     def get_ignore_mask(gold, ignore_indices):
-        if not q.issequence(ignore_indices):
+        if ignore_indices is not None and not q.issequence(ignore_indices):
             ignore_indices = [ignore_indices]
         mask = None     # (batsize,)
         if ignore_indices is not None:
@@ -109,11 +109,11 @@ class DiscreteLoss(torch.nn.Module):
                 else:
                     mask = mask & mask_i
         if mask is None:
-            mask = torch.ones_like(gold)
+            mask = torch.ones_like(gold).byte()
         return mask
 
-    def forward(self, x, gold, mask=None, **kw):
-        y, ignoremask = self._forward(x, gold, mask=mask, **kw)
+    def forward(self, x, gold, **kw):
+        y, ignoremask = self._forward(x, gold, **kw)
         y = y.float()
 
         if ignoremask is not None:
