@@ -127,7 +127,7 @@ class DiscreteLoss(torch.nn.Module):
         return loss
 
 
-class Accuracy(DiscreteLoss):
+class OldAccuracy(DiscreteLoss):
     def _forward(self, x, gold):
         ignoremask = self.get_ignore_mask(gold, self.ignore_indices)
         maxes, best = torch.max(x, 1)
@@ -137,7 +137,7 @@ class Accuracy(DiscreteLoss):
         return same.float(), ignoremask
 
 
-class SeqAccuracy(DiscreteLoss):
+class OldSeqAccuracy(DiscreteLoss):
     """ very basic explicit seqaccuracy implementation.
         does not support batchable sparse mask """
     def _forward(self, x, gold):
@@ -333,3 +333,75 @@ class DistillLoss(torch.nn.Module):
         elif self.reduction == "none":
             ret = loss
         return ret
+
+
+class Accuracy(torch.nn.Module):
+    """ Accuracy in the last dimension. For sequences, use SeqAccuracy """
+
+    def __init__(self, reduction="elementwise_mean", ignore_index=-100, **kw):
+        super(Accuracy, self).__init__(**kw)
+        self.reduction = reduction
+        self.ignore_index = ignore_index
+
+    @staticmethod
+    def get_ignore_mask(gold, ignore_index):
+        if ignore_index < 0:
+            return None
+        else:
+            mask = gold != ignore_index
+            return mask
+
+    def forward(self, x, gold):
+        # assert(gold.dim() == 1)     # use a different accuracy if not 1D target
+        ignoremask = self.get_ignore_mask(gold, self.ignore_index)
+        maxes, best = torch.max(x, -1)
+        same = best == gold
+        same = same.float()
+        if self.reduction == "elementwise_mean":
+            if ignoremask is None:
+                total = 1.
+                for i in range(same.dim()):
+                    total *= same.size(i)
+            else:
+                total = ignoremask.float().sum()
+            ret = same.sum() / total
+        elif self.reduction == "none":
+            ret = same
+        elif self.reduction == "sum":
+            ret = same.sum()
+        return ret
+
+
+class SeqAccuracy(torch.nn.Module):
+    """ very basic explicit seqaccuracy implementation.
+        does not support batchable sparse mask """
+
+    def __init__(self, reduction="elementwise_mean", ignore_index=-100, **kw):
+        super(SeqAccuracy, self).__init__(**kw)
+        self.reduction = reduction
+        self.ignore_index = ignore_index
+
+    @staticmethod
+    def get_ignore_mask(gold, ignore_index):
+        if ignore_index < 0:
+            return None
+        else:
+            mask = gold != ignore_index
+            return mask
+
+    def forward(self, x, gold):
+        """
+        :param x: (batsize, seqlen, vocsize) - probabilities over output symbols for every time step
+        :param gold: (batsize, seqlen) - ids of gold output symbols at every time step
+        :return: loss value, ignormask
+        """
+        ignoremask = self.get_ignore_mask(gold, self.ignore_index)
+        _, best = torch.max(x, 2)  # (batsize, seqlen) - most probable symbols at every time step
+        same = best == gold
+        outignoremask = None
+        if ignoremask is not None:
+            same = same | ~ ignoremask  # set ignored portions to be same[i,j]=True
+            outignoremask = ignoremask.long().sum(1) > 0
+        sameseqs = same.long().sum(1)
+        sameseqs = sameseqs == int(same.size(1))
+        return sameseqs, outignoremask
