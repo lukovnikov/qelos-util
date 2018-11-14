@@ -20,11 +20,12 @@ from functools import partial
 import qelos as q
 from torch.utils.data import Dataset, DataLoader
 import random
+from scipy import sparse
 
 
 __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_unpack", "iscuda", "hyperparam", "v",
-           "intercat", "masked_mean", "tensor_dataset", "datacat", "dataload", "datasplit",
-           "BucketedRandomSampler", "padclip_collate_fn", "pad_clip",
+           "intercat", "masked_mean", "tensor_dataset", "datacat", "dataload", "datasplit", "MixedTensorDataset",
+           "BucketedRandomBatchSampler", "padclip_collate_fn", "pad_clip",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
            "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of"]
 
@@ -238,7 +239,7 @@ class RandomContiguousBatchSampler(torch.utils.data.sampler.Sampler):
         return self.numexamples // self.batsize + int(self.numexamples % self.batsize > 0)
 
 
-class BucketedRandomSampler(torch.utils.data.sampler.Sampler):
+class BucketedRandomBatchSampler(torch.utils.data.sampler.Sampler):
     """
     Assumes examples are sorted by length.
     Divides numexamples into numbuckets buckets evenly.
@@ -246,7 +247,7 @@ class BucketedRandomSampler(torch.utils.data.sampler.Sampler):
     Best to be used with padclip collate fn.
     """
     def __init__(self, numexamples, numbuckets, batch_size):
-        super(BucketedRandomSampler, self).__init__(None)
+        super(BucketedRandomBatchSampler, self).__init__(None)
         self.numexamples, self.numbuckets, self.batsize = numexamples, numbuckets, batch_size
         # divide example ids into buckets
         allids = range(self.numexamples)
@@ -276,9 +277,15 @@ class BucketedRandomSampler(torch.utils.data.sampler.Sampler):
         random.shuffle(batchids)
         for batchid in batchids:
             outb = batches[batchid]
-            outb = sorted(outb, reverse=True)
+            outb = sorted(outb, reverse=False)
             yield outb
 
+    def __len__(self):
+        acc = 0
+        for bucket in self.buckets:
+            numbats = len(bucket) // self.batsize + int(len(bucket) % self.batsize > 0)
+            acc += numbats
+        return acc
 
 
 def padclip_collate_fn(batch, padidx=0):  # batch is list of things  # TODO: 3D
@@ -299,10 +306,10 @@ def _padclip_collate_fn_rec(batch_e, padidx=0):
 
 
 def pad_clip(tensor, padidx=0):
+    """ cuts away contiguous shared pieces of padding index at the end of sequence.
+        clips only along the last dimension."""
     if isinstance(tensor, torch.Tensor):
         assert(tensor.dtype in (torch.int64, torch.int32, torch.int16))
-        # if tensor.dim() != 2:
-        #     raise q.SumTingWongException("only 2D integers are supported, got {}D".format(batch_e.dim()))
         lens = (tensor != padidx).long().sum(-2)
         lens = (lens > 0).long()
         arng = torch.arange(lens.size(-1)).to(lens.device)
@@ -344,9 +351,35 @@ def tensor_dataset(*x):
             xe = torch.tensor(xe)
         tensors.append(xe)
     for xe in tensors:
-        assert(xe.size(0) == tensors[0].size(0))
+        assert(xe.shape[0] == tensors[0].shape[0])
     ret = torch.utils.data.dataset.TensorDataset(*tensors)
     return ret
+
+
+class MixedTensorDataset(torch.utils.data.dataset.Dataset):
+    """ Like TensorDataset from pytorch but accepts sparse matrices, numpy arrays in addition to torch tensors.
+        Converts sp.sparse and numpy arrays to torch tensors in __getitem__()"""
+    def __init__(self, *tensors, convert_ints=False):
+        """ if convert_ints, automatically converts all uint{8-32} and int{8-32} to int64 """
+        assert all(tensors[0].shape[0] == tensor.shape[0] for tensor in tensors)
+        self.tensors = tensors
+        self.convert_ints = convert_ints
+
+    def __getitem__(self, index):
+        ret = tuple()
+        for tensor in self.tensors:
+            retadd = tensor[index]
+            if isinstance(retadd, sparse.spmatrix):
+                retadd = retadd.toarray()[0]
+            if isinstance(retadd, np.ndarray):
+                retadd = torch.tensor(retadd)
+            if self.convert_ints and retadd.dtype in (torch.uint8, torch.int8, torch.uint16, torch.int16, torch.uint32, torch.int32):
+                retadd = retadd.long()
+            ret += (retadd,)
+        return ret
+
+    def __len__(self):
+        return self.tensors[0].shape[0]
 
 
 def datacat(datasets, mode=1):

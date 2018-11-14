@@ -5,15 +5,19 @@ import torch
 
 class TestBucketRandomSampler(TestCase):
     def test_indexes(self):
-        bs = q.BucketedRandomSampler(500, 11, 17)
+        bs = q.BucketedRandomBatchSampler(500, 11, 17)
         allids = []
+        a = 0
         for x in bs:
             print(len(x))
             for xe in x:
                 allids.append(xe.item())
+            a += 1
+        print("bs len", len(bs), a)
         print(len(allids))
         self.assertTrue(len(set(range(500)) - set(allids)) == 0)    # all ids covered
         self.assertTrue(len(allids) == len(set(allids)))            # all ids unique
+        self.assertTrue(len(bs) == a)
 
 
 class TestPadClip(TestCase):
