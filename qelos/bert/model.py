@@ -11,7 +11,7 @@ import os
 """ Heavily borrowed from Hugging Face BERT """
 
 
-__all__ = ["TransformerBERT", "BertConfig", "BERTClassifier"]
+__all__ = ["TransformerBERT", "BertConfig", "BERTClassifier", "BERTMLM"]
 
 
 class BertConfig(object):
@@ -182,9 +182,9 @@ class TransformerEncoder(torch.nn.Module):
         return all_h
 
 
-class BERTMLM(torch.nn.Module):
+class BERTMLM_Head(torch.nn.Module):
     def __init__(self, dim, vocab_size, hidden_act=q.GeLU):
-        super(BERTMLM, self).__init__()
+        super(BERTMLM_Head, self).__init__()
         self.transform = torch.nn.Linear(dim, dim, bias=True)
         self.act = hidden_act()
         self.ln = torch.nn.LayerNorm(dim, eps=1e-10)
@@ -335,7 +335,7 @@ class TransformerBERT(torch.nn.Module):
 
         if make_mlm_pred:
             vocsize, dim = self.emb.word_embeddings.weight.shape
-            mlm_pred = BERTMLM(dim, vocsize, hidden_act=self.hidden_act)
+            mlm_pred = BERTMLM_Head(dim, vocsize, hidden_act=self.hidden_act)
             if verbose:
                 print("Loading MLM prediction model")
             out_weights = self.emb.word_embeddings.weight   # output layer weights tied to embeddings
@@ -408,6 +408,20 @@ class TransformerBERT(torch.nn.Module):
             return m, mlm_pred
         else:
             return m
+
+
+class BERTMLM(torch.nn.Module):
+    def __init__(self, bert: TransformerBERT, mlmhead: BERTMLM_Head):
+        super(BERTMLM, self).__init__()
+        self.bert, self.head = bert, mlmhead
+
+    def forward(self, input_ids, typeids=None, mask=None):
+        # feed through bert body
+        all_h, _ = self.bert(input_ids, token_type_ids=typeids, mask=mask)
+        h = all_h[-1]  # top states (batsize, seqlen, dim)
+        # feed through head
+        out = self.head(h)
+        return out
 
 
 class BERTClassifier(torch.nn.Module):
