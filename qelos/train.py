@@ -139,7 +139,7 @@ def eval_loop(model, dataloader, device=torch.device("cpu")):
 
 def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
                 batch_number=-1, max_batches=0, current_epoch=0, max_epochs=0,
-                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(), run=False):
+                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple()):
     """
     Runs a single batch of SGD on provided batch and settings.
     :param batch:  batch to run on
@@ -209,7 +209,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
 
 
 def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock("-"),
-             current_epoch=0, max_epochs=0, _train_batch=train_batch, on_start=tuple(), on_end=tuple(), run=False):
+             current_epoch=0, max_epochs=0, _train_batch=train_batch, on_start=tuple(), on_end=tuple()):
     """
     Performs an epoch of training on given model, with data from given dataloader, using given optimizer,
     with loss computed based on given losses.
@@ -252,7 +252,7 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
 
 def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cpu"),
             current_epoch=0, max_epochs=0,
-            on_start=tuple(), on_start_batch=tuple(), on_end_batch=tuple(), on_end=tuple(), run=False):
+            on_start=tuple(), on_start_batch=tuple(), on_end_batch=tuple(), on_end=tuple()):
     """
     Performs a test epoch. If run=True, runs, otherwise returns partially filled function.
     :param model:
