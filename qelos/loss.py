@@ -283,7 +283,7 @@ class DistillLoss(torch.nn.Module):
         """
         :param ignore_index:    gold ids whose time steps will be ignored
         :param temperature:     softmax temperature (!: will not be applied if soft_gold_mode is not "logits")
-        :param mixture:         mixing portion of soft and hard gold (1 => only kl, 0 => only ce)
+        :param mixture:         mixing portion of soft and hard gold (1 => only soft kl, 0 => only hard ce)
         :param kw:
         """
         super(DistillLoss, self).__init__(**kw)
