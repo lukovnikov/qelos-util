@@ -274,7 +274,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
             _batch = q.recmap(_batch, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
             batch = _batch
 
-            if no_gold(losses):
+            if q.no_gold(losses):
                 batch_in = batch
                 gold = None
             else:
