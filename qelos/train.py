@@ -334,11 +334,11 @@ def run_training(run_train_epoch=None, run_valid_epoch=None, max_epochs=1, valid
     stop_training = current_epoch >= max_epochs
     while stop_training is not True:
         tt.tick()
-        ttmsg = run_train_epoch(current_epoch=current_epoch, max_epochs=max_epochs, run=True)
+        ttmsg = run_train_epoch(current_epoch=current_epoch, max_epochs=max_epochs)
         ttmsg = "Epoch {}/{} -- {}".format(current_epoch+1, max_epochs, ttmsg)
         validepoch = False
         if run_valid_epoch is not None and validinter_count % validinter == 0:
-            ttmsg_v = run_valid_epoch(current_epoch=current_epoch, max_epochs=max_epochs, run=True)
+            ttmsg_v = run_valid_epoch(current_epoch=current_epoch, max_epochs=max_epochs)
             ttmsg += " -- " + ttmsg_v
             validepoch = True
         validinter_count += 1
