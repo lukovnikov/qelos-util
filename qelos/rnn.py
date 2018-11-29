@@ -4,7 +4,7 @@ import numpy as np
 import re
 
 
-__all__ = ["RNNCell", "GRUCell", "LSTMCell", "Attention", "DotAttention", "GeneralDotAttention",
+__all__ = ["RNNCell", "GRUCell", "LSTMCell", "Attention", "DotAttention", "GeneralDotAttention", "AttentionBase",
            "FwdAttention", "TFDecoder", "FreeDecoder", "ThinDecoder", "LuongCell", "BahdanauCell",
            "DecoderCell", "RNNEncoder", "GRUEncoder", "LSTMEncoder", "RNNCellEncoder", "GRUCellEncoder",
            "LSTMCellEncoder", "AttentionWithCoverage"]
