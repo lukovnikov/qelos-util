@@ -108,11 +108,12 @@ def test_custom_f(lr=0):
 
 
 class PhraseAttention(Attention):       # for depth-first decoding
-    def __init__(self, attcomp:AttComp=None, summcomp:SummComp=None, score_norm=None):
+    def __init__(self, attcomp:AttComp=None, summcomp:SummComp=None, score_norm=None, renormalize=False):
         super(PhraseAttention, self).__init__(attcomp=attcomp, summcomp=summcomp, score_norm=score_norm)
         self.prevatts = None            # (batsize, declen_so_far, enclen)
         self.prevatt_ptr = None         # for every example, keeps a list of pointers to positions in prevatts
         self.prevatt_siblings = None    # for every example, keeps a list of sets of pointers to groups of siblings
+        self._renormalize = renormalize
 
     def batch_reset(self):
         self.prevatts, self.prevatt_ptr = None, None
@@ -123,8 +124,16 @@ class PhraseAttention(Attention):       # for depth-first decoding
         Gets overlap in siblings based on current state of prevatts and prevatt_ptr.
         Must be called after a batch and before batch reset.
         """
+        # finalize prevattr_ptr
+        for i, prevattr_ptr_e in enumerate(self.prevatt_ptr):
+            while len(prevattr_ptr_e) > 0:
+                ptr_group = prevattr_ptr_e.pop()
+                if len(ptr_group) > 1:
+                    self.prevatt_siblings[i].append(ptr_group)
+
+        # generate ids by which to gather from prevatts
         ids = torch.zeros(self.prevatts.size(0), self.prevatts.size(1), self.prevatts.size(1),
-                          dtype=torch.long, device=self.prevatts.device) - 1
+                          dtype=torch.long, device=self.prevatts.device)
         maxnumsiblingses, maxnumsiblings = 0, 0
         for eid, siblingses in enumerate(self.prevatt_siblings):    # list of lists of ids in prevatts
             maxnumsiblingses = max(maxnumsiblingses, len(siblingses))
@@ -134,21 +143,27 @@ class PhraseAttention(Attention):       # for depth-first decoding
                     ids[eid, sgid, sid] = sibling
         ids = ids[:, :maxnumsiblingses, :maxnumsiblings]
 
-        prependix = torch.zeros(self.prevatts.size(0), 1, self.prevatts.size(2), dtype=self.prevatts.dtype, device=self.prevatts.device) + 1
-        prevatts = torch.cat([prependix, self.prevatts], 1)
-        ids = ids + 1
+        prevatts = self.prevatts
 
-        idsmask= ((ids != 0).sum(2, keepdim=True) != 0).float()
+        idsmask= ((ids != 0).sum(2, keepdim=True) > 1).float()
 
-        _ids = ids.view(ids.size(0), -1).unsqueeze(-1).repeat(1, 1, prevatts.size(2))
+        # gather from prevatts
+        _ids = ids.contiguous().view(ids.size(0), -1).unsqueeze(-1).repeat(1, 1, prevatts.size(2))
         prevatts_gathered = torch.gather(prevatts, 1, _ids)
         prevatts_gathered = prevatts_gathered.view(prevatts.size(0), ids.size(1), ids.size(2), prevatts.size(2))
 
+        # compute overlaps
         overlaps = prevatts_gathered.prod(2)
         overlaps = overlaps * idsmask
         overlaps = overlaps.sum(2).sum(1)
         overlaps = overlaps.mean(0)
         return overlaps
+
+    def renormalize(self, alphas):
+        if self._renormalize:
+            total = alphas.sum(-1, keepdim=True)
+            alphas = alphas / total
+        return alphas
 
     def forward(self, qry, ctx, ctx_mask=None, values=None, pushpop=None):
         """
@@ -161,26 +176,25 @@ class PhraseAttention(Attention):       # for depth-first decoding
         scores = self.attcomp(qry, ctx, ctx_mask=ctx_mask)
         scores = scores + (torch.log(ctx_mask.float()) if ctx_mask is not None else 0)
         alphas = self.score_norm(scores)
+
         # constrain alphas to parent's alphas:
-        if self.prevatts is not None:   # there is history
-            parent_ptr = [prevatt_ptr_e[-2][-1] for prevatt_ptr_e in self.prevatt_ptr]
-            parent_ptr = torch.tensor(parent_ptr).long().to(self.prevatts.device)
-            parent_alphas = self.prevatts.index_select(1, parent_ptr)
-            alphas = parent_overlap_f(parent_alphas, alphas)
+        if self.prevatts is None:   # there is no history
+            self.prevatts = torch.ones_like(alphas).unsqueeze(1)
+            self.prevatt_ptr = [[[0], []] for _ in range(len(pushpop))]
+            self.prevatt_siblings = [[] for _ in range(len(pushpop))]
+
+        parent_ptr = [prevatt_ptr_e[-2][-1] for prevatt_ptr_e in self.prevatt_ptr]
+        parent_ptr = torch.tensor(parent_ptr).long().to(self.prevatts.device)
+        parent_alphas = self.prevatts.gather(1, parent_ptr.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, self.prevatts.size(-1))).squeeze(1)
+        alphas = parent_overlap_f(parent_alphas, alphas)
+        alphas = self.renormalize(alphas)
 
         # compute summary
         values = ctx if values is None else values
         summary = self.summcomp(values, alphas)
 
         # store alphas and update ptrs
-        if self.prevatts is not None:   # there is history --> append
-            self.prevatts = torch.cat([self.prevatts, alphas.unsqueeze(1)], 1)
-        else:
-            self.prevatts = alphas.unsqueeze(1)
-
-        if self.prevatt_ptr is None:    # then initialize
-            self.prevatt_ptr = [[[]] for _ in range(len(pushpop))]
-            self.prevatt_siblings = [[] for _ in range(len(pushpop))]
+        self.prevatts = torch.cat([self.prevatts, alphas.unsqueeze(1)], 1)
 
         k = self.prevatts.size(1) - 1
         for i in range(len(pushpop)):
@@ -188,31 +202,100 @@ class PhraseAttention(Attention):       # for depth-first decoding
             if pushpop[i] > 0:  # PUSH (new parent)
                 self.prevatt_ptr[i].append([])
             elif pushpop[i] < 0:    # POP (siblings finished)
-                siblings = self.prevatt_ptr[i].pop()
-                self.prevatt_siblings.append(siblings)
+                pp = pushpop[i]
+                while pp < 0:
+                    siblings = self.prevatt_ptr[i].pop(-1)
+                    if len(siblings) > 1:
+                        self.prevatt_siblings[i].append(siblings)
+                    pp += 1
             else:
                 pass
         return alphas, summary, scores
 
 
-def test_phrase_attention_sibling_overlap(lr=0):
+
+def test_phrase_attention(lr=0):
+    # simulate operation of attention
+    ctx = torch.randn(2, 5, 4)
+    qrys = torch.randn(2, 6, 4)
+    ctx_mask = torch.tensor([[1,1,1,1,1],[1,1,1,0,0]])
+    pushpop = [[1,0,1,0,-1,-1], [1,1,1,1,-4,0]]
+    pushpop = list(zip(*pushpop))
+
     m = PhraseAttention()
-    batsize, seqlen = 2, 6
-    allatts = torch.rand(batsize, seqlen, seqlen)
-    allatts.requires_grad = True
-    m.prevatts = allatts
-    m.prevatt_siblings = [[[0, 1], [2, 3, 4, 5]],
-                          [[1, 2], [3, 4], [0, 5]]]
-    l = m.get_sibling_overlap()
-    l.backward()
-    print(allatts)
-    print(allatts.grad)
+
+    for i in range(qrys.size(1)):
+        alphas, summary, scores = m(qrys[:, i], ctx, ctx_mask=ctx_mask, pushpop=pushpop[i])
+
+    overlap = m.get_sibling_overlap()
+    pass
+# endregion
 
 
+# region components for phrase attention
+class SigmoidLSTMAttComp(AttComp):
+    def __init__(self, qrydim=None, ctxdim=None, encdim=None, dropout=0., numlayers=1, **kw):
+        super(SigmoidLSTMAttComp, self).__init__(**kw)
+        encdims = [encdim] * numlayers
+        self.layers = q.LSTMEncoder(qrydim+ctxdim, *encdims, bidir=False, dropout_in=dropout)
+        self.lin = torch.nn.Linear(encdim, 1)
+        self.act = torch.nn.Sigmoid()
 
+    def forward(self, qry, ctx, ctx_mask=None):
+        """
+        :param qry:     (batsize, qrydim)
+        :param ctx:     (batsize, seqlen, ctxdim)
+        :param ctx_mask:    (batsize, seqlen)
+        :return:
+        """
+        inp = torch.cat([ctx, qry.unsqueeze(1).repeat(1, ctx.size(1), 1)], 2)
+        out = self.layers(inp, mask=ctx_mask)
+        ret = self.lin(out).squeeze(-1)     # (batsize, seqlen)
+        ret = self.act(ret)
+        return ret
+
+
+class LSTMSummComp(SummComp):
+    def __init__(self, valdim=None, encdim=None, dropout=0., numlayers=1, **kw):
+        super(LSTMSummComp, self).__init__(**kw)
+        encdims = [encdim] * numlayers
+        self.layers = q.LSTMCellEncoder(valdim, *encdims, bidir=False, dropout_in=dropout)
+
+    def forward(self, values, alphas):
+        out = self.layers(values, gate=alphas)
+        return out
+
+
+class LSTMPhraseAttention(PhraseAttention):
+    def __init__(self, qrydim=None, ctxdim=None, valdim=None, encdim=None, dropout=0., numlayers=1, **kw):
+        ctxdim = qrydim if ctxdim is None else ctxdim
+        valdim = ctxdim if valdim is None else valdim
+        encdim = ctxdim if encdim is None else encdim
+        def scorenorm(x):
+            return q.inf2zero(x)
+        attcomp = SigmoidLSTMAttComp(qrydim=qrydim, ctxdim=ctxdim, encdim=encdim, dropout=dropout, numlayers=numlayers)
+        summcomp = LSTMSummComp(valdim=valdim, encdim=encdim, dropout=dropout, numlayers=numlayers)
+        super(LSTMPhraseAttention, self).__init__(attcomp=attcomp, summcomp=summcomp,
+                                                  score_norm=scorenorm, renormalize=False, **kw)
+
+
+def test_lstm_phrase_attention(lr=0):
+    m = LSTMPhraseAttention(4)
+    ctx = torch.randn(2, 5, 4)
+    qrys = torch.randn(2, 6, 4)
+    ctx_mask = torch.tensor([[1,1,1,1,1],[1,1,1,0,0]])
+    pushpop = [[1,0,1,0,-1,-1], [1,1,1,1,-4,0]]
+    pushpop = list(zip(*pushpop))
+
+    for i in range(qrys.size(1)):
+        alphas, summary, scores = m(qrys[:, i], ctx, ctx_mask=ctx_mask, pushpop=pushpop[i])
+
+    overlap = m.get_sibling_overlap()
+    pass
 
 # endregion
 
 if __name__ == '__main__':
     # q.argprun(test_custom_f)
-    q.argprun(test_phrase_attention_sibling_overlap)
+    # q.argprun(test_phrase_attention)
+    q.argprun(test_lstm_phrase_attention)
