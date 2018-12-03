@@ -6,5 +6,4 @@ from qelos.exceptions import *
 from qelos.rnn import *
 from qelos.train import *
 from qelos.loss import *
-from qelos.bert import *
-import qelos.tokenization as tokens
+import qelos.bert as bert

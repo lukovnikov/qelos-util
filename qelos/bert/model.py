@@ -402,7 +402,7 @@ class TransformerBERT(torch.nn.Module):
         m = TransformerBERT.init_from_config(config)
         mlm_pred = m.load_weights_from_tf_checkpoint(ckpt_path, make_mlm_pred=make_mlm_pred, verbose=verbose)
         # attach vocab on m
-        vocab = q.tokens.load_vocab(vocab_path)
+        vocab = q.bert.load_vocab(vocab_path)
         m.D = vocab
         if make_mlm_pred:
             return m, mlm_pred
@@ -450,7 +450,6 @@ class BERTClassifier(torch.nn.Module):
         poolout = self.dropout(poolout)
         logits = self.lin(poolout)
         return logits
-
 
 
 def run(config_path="../data/bert/bert-base/bert_config.json",
