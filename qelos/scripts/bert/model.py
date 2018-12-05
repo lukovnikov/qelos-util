@@ -18,6 +18,7 @@ class AdaptedBERTEncoderSingle(torch.nn.Module):
         """
         super(AdaptedBERTEncoderSingle, self).__init__(**kw)
         self.bert = bert
+        specialmaps = deepcopy(specialmaps)
         self.numout = numout
         if self.numout >= 0:
             numout = numout if numout > 0 else 1
@@ -42,9 +43,10 @@ class AdaptedBERTEncoderSingle(torch.nn.Module):
             torch.nn.init.normal_(self.lin.weight, 0, self.bert.init_range)
             torch.nn.init.zeros_(self.lin.bias)
 
-    def forward(self, inpids):
+    def forward(self, inpids, ret_layer_outs=False):
         """
         :param inpids:  (batsize, seqlen) int ids in oldvocab
+        :param ret_layer_outs: boolean, whether to return the raw transformer states
         :return:
         """
         # transform inpids
@@ -71,15 +73,20 @@ class AdaptedBERTEncoderSingle(torch.nn.Module):
         # do forward
         typeids = torch.zeros_like(newinp)
         padmask = newinp != self.pad_id
-        _, poolout = self.bert(newinp, typeids, padmask)
+        layerouts, poolout = self.bert(newinp, typeids, padmask)
+        ret = None
         if self.numout >= 0:
             poolout = self.dropout(poolout)
             logits = self.lin(poolout)
             if self.numout == 0:
                 logits = logits.squeeze(-1)     # (batsize,)
-            return logits
+            ret = logits
         else:
-            return poolout
+            ret = poolout
+        if ret_layer_outs:
+            return ret, layerouts, padmask
+        else:
+            return ret
 
 
 class AdaptedBERTEncoderPair(AdaptedBERTEncoderSingle):
@@ -143,17 +150,55 @@ class AdaptedBERTCompare(torch.nn.Module):
     """
     Encodes left, encodes right, compares with a special function.
     """
-    def __init__(self, bert, oldvocab=None, specialmaps={0: [0]}, share_left_right=False, **kw):
+    oldvocab_norel_tok = "ft"
+    norel_tok = "—"
+    def __init__(self, bert, oldvocab=None, specialmaps={0: [0]}, share_left_right=True, **kw):
         super(AdaptedBERTCompare, self).__init__(**kw)
+        specialmaps = deepcopy(specialmaps)
         self.left_enc = AdaptedBERTEncoderSingle(bert, numout=-1, oldvocab=oldvocab, specialmaps=specialmaps)
         rightbert = bert if share_left_right else deepcopy(bert)
+        if self.oldvocab_norel_tok in oldvocab:
+            specialmaps[oldvocab[self.oldvocab_norel_tok]] = [bert.D[self.norel_tok]]
         self.right_enc = AdaptedBERTEncoderSingle(rightbert, numout=-1, oldvocab=oldvocab, specialmaps=specialmaps)
 
-    def forward(self, a, b):
-        aenc = self.left_enc(a)
-        benc = self.right_enc(b)
+    def forward(self, q, rel):
+        aenc = self.left_enc(q)
+        benc = self.right_enc(rel)
         # dot
         dots = torch.einsum("bd,bd->b", [aenc, benc])
+        return dots
+
+
+class AdaptedBERTCompareSlotPtr(AdaptedBERTCompare):
+    def __init__(self, bert, oldvocab=None, specialmaps={0: [0]}, share_left_right=True, **kw):
+        super(AdaptedBERTCompareSlotPtr, self).__init__(bert, oldvocab=oldvocab, specialmaps=specialmaps,
+                                                        share_left_right=share_left_right)
+        self.linear = torch.nn.Linear(bert.dim, 2)
+        self.sm = torch.nn.Softmax(1)
+
+    def forward(self, q, rel1, rel2):
+        qenc_final, qenc_layerouts, qenc_mask = self.left_enc(q, ret_layer_outs=True)
+        ys = qenc_layerouts[-1]
+
+        # compute scores
+        scores = self.linear(ys)
+        scores = scores + torch.log(qenc_mask.float().unsqueeze(-1))
+        scores = self.sm(scores)    # (batsize, seqlen, 2)
+
+        # get summaries
+        ys = ys.unsqueeze(2)
+        scores = scores.unsqueeze(3)
+        b = ys * scores     # (batsize, seqlen, 2, dim)
+        summaries = b.sum(1)    # (batsize, 2, dim)
+        summaries = summaries.view(summaries.size(0), -1)   # (batsize, 2*dim)
+
+        # compute relation encodings
+        rel1_enc = self.right_enc(rel1)
+        rel2_enc = self.right_enc(rel2)
+        relenc = torch.cat([rel1_enc, rel2_enc], 1)     # (batsize, 2*dim)
+
+        # compute output scores
+        dots = torch.einsum("bd,bd->b", [summaries, relenc])
         return dots
 
 
@@ -202,8 +247,82 @@ def test_adapted_bert_encoder_pair(lr=0):
     y = m(a, b)
     print(y)
     pass
+
+
+def test_adapted_bert_compare(lr=0):
+    vocab = "<PAD> [UNK] the a cucumber apple mango banana fart art plant ft"
+    vocab = dict(zip(vocab.split(), range(len(vocab.split()))))
+    print(vocab)
+
+    a = [
+        [1, 2, 3, 0, 0, 0, 0, 0],
+        [2, 3, 4, 5, 6, 7, 8, 0],
+        [9, 10, 0, 0, 0, 0, 0, 0]
+    ]
+    a = torch.tensor(a)
+
+    b = [
+        [1, 2, 3, 0, 0, 0, 0, 0],
+        [2, 3, 4, 5, 6, 7, 8, 0],
+        [9, 10, 0, 0, 0, 0, 0, 0]
+    ]
+    b = torch.tensor(b)
+
+    c = [
+        [1, 2, 3, 0, 0, 0, 0, 0],
+        [2, 3, 4, 5, 6, 7, 8, 0],
+        [9, 10, 0, 0, 0, 0, 0, 0]
+    ]
+    c = torch.tensor(c)
+
+    bert = q.bert.TransformerBERT.load_from_dir("../../../data/bert/bert-base/")
+    m = AdaptedBERTCompare(bert, oldvocab=vocab)
+
+    print("made model")
+
+    y = m(a, b)
+    print(y)
+    pass
+
+
+def test_adapted_bert_compare_slotptr(lr=0):
+    vocab = "<PAD> [UNK] the a cucumber apple mango banana fart art plant ft"
+    vocab = dict(zip(vocab.split(), range(len(vocab.split()))))
+    print(vocab)
+
+    a = [
+        [1, 2, 3, 0, 0, 0, 0, 0],
+        [2, 3, 4, 5, 6, 7, 8, 0],
+        [9, 10, 0, 0, 0, 0, 0, 0]
+    ]
+    a = torch.tensor(a)
+
+    b = [
+        [1, 2, 3, 0, 0, 0, 0, 0],
+        [2, 3, 4, 5, 6, 7, 8, 0],
+        [9, 10, 0, 0, 0, 0, 0, 0]
+    ]
+    b = torch.tensor(b)
+
+    c = [
+        [1, 2, 3, 0, 0, 0, 0, 0],
+        [2, 3, 4, 5, 6, 7, 8, 0],
+        [9, 10, 0, 0, 0, 0, 0, 0]
+    ]
+    c = torch.tensor(c)
+
+    bert = q.bert.TransformerBERT.load_from_dir("../../../data/bert/bert-base/")
+    m = AdaptedBERTCompareSlotPtr(bert, oldvocab=vocab)
+
+    print("made model")
+
+    y = m(a, b, c)
+    print(y)
+    pass
+
 # endregion
 
 
 if __name__ == '__main__':
-    q.argprun(test_adapted_bert_encoder_pair)
+    # q.argprun(test_adapted_bert_encoder_pair)
+    q.argprun(test_adapted_bert_compare_slotptr)
