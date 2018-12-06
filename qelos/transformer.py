@@ -6,7 +6,7 @@ from torch import nn
 
 import qelos as q
 
-__all__ = ["MultiHeadAttention", "TransformerEncoderBlock",
+__all__ = ["MultiHeadAttention", "TransformerEncoderBlock", "PositionWiseFeedforward",
            "TransformerDecoderBlock", "TransformerEncoder", "TransformerDecoder",
            "TS2S", "TS2S_arg", "WaveEmb"]
 
@@ -74,12 +74,6 @@ class MultiHeadAttention(nn.Module):
         self.q_proj = nn.Linear(indim, numheads * self.d_k)
         self.k_proj = nn.Linear(indim, numheads * self.d_k)
         self.v_proj = nn.Linear(indim, numheads * self.d_v)
-        nn.init.normal_(self.q_proj.weight, mean=0, std=np.sqrt(2.0 / (indim + self.d_k)))
-        nn.init.normal_(self.k_proj.weight, mean=0, std=np.sqrt(2.0 / (indim + self.d_k)))
-        nn.init.normal_(self.v_proj.weight, mean=0, std=np.sqrt(2.0 / (indim + self.d_v)))
-        nn.init.zeros_(self.q_proj.bias)
-        nn.init.zeros_(self.k_proj.bias)
-        nn.init.zeros_(self.v_proj.bias)
 
         self.relpos = relpos
         self.relpos_emb = None
@@ -95,12 +89,8 @@ class MultiHeadAttention(nn.Module):
                 self.relpos_k_proj = nn.Linear(indim, numheads * self.d_k)    # projecting for rel position keys
                 self.relpos_u = torch.nn.Parameter(torch.empty(numheads, self.d_k))
                 self.relpos_v = torch.nn.Parameter(torch.empty(numheads, self.d_k))
-                nn.init.xavier_normal_(self.relpos_u)
-                nn.init.xavier_normal_(self.relpos_v)
 
         self.vw_proj = nn.Linear(vdim, indim)
-        nn.init.xavier_normal_(self.vw_proj.weight)
-        nn.init.zeros_(self.vw_proj.bias)
 
         self.attn_dropout = nn.Dropout(attention_dropout)
         self.resid_dropout = q.RecDropout(residual_dropout, shareaxis=1)
@@ -110,6 +100,23 @@ class MultiHeadAttention(nn.Module):
         self._prev_k = None      # (batsize, seqlen, numheads, dim)
         self._prev_v = None
         self._prev_mask = None
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.normal_(self.q_proj.weight, mean=0, std=np.sqrt(2.0 / (self.indim + self.d_k)))
+        nn.init.normal_(self.k_proj.weight, mean=0, std=np.sqrt(2.0 / (self.indim + self.d_k)))
+        nn.init.normal_(self.v_proj.weight, mean=0, std=np.sqrt(2.0 / (self.indim + self.d_v)))
+        nn.init.zeros_(self.q_proj.bias)
+        nn.init.zeros_(self.k_proj.bias)
+        nn.init.zeros_(self.v_proj.bias)
+
+        nn.init.xavier_normal_(self.vw_proj.weight)
+        nn.init.zeros_(self.vw_proj.bias)
+
+        if self.relpos == "full":
+            nn.init.xavier_normal_(self.relpos_u)
+            nn.init.xavier_normal_(self.relpos_v)
 
     def set_bidir(self, bidir):
         if isinstance(self, MultiHeadAttention):
@@ -266,12 +273,16 @@ class PositionWiseFeedforward(nn.Module):
         super(PositionWiseFeedforward, self).__init__()
         self.projA = nn.Linear(indim, dim)
         self.projB = nn.Linear(dim, indim)
-        nn.init.normal_(self.projA.weight, mean=0, std=np.sqrt(2.0 / (indim + dim)))
-        nn.init.normal_(self.projB.weight, mean=0, std=np.sqrt(2.0 / (indim + dim)))
-        nn.init.zeros_(self.projA.bias)
-        nn.init.zeros_(self.projB.bias)
         self.act = activation()
         self.dropout = q.RecDropout(dropout, shareaxis=1)
+        self.indim, self.dim = indim, dim
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.normal_(self.projA.weight, mean=0, std=np.sqrt(2.0 / (self.indim + self.dim)))
+        nn.init.normal_(self.projB.weight, mean=0, std=np.sqrt(2.0 / (self.indim + self.dim)))
+        nn.init.zeros_(self.projA.bias)
+        nn.init.zeros_(self.projB.bias)
 
     def forward(self, x):       # (batsize, seqlen, ?)
         h = self.projA(x)

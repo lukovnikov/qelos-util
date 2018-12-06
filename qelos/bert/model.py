@@ -215,6 +215,13 @@ class TransformerBERT(torch.nn.Module):
         q.RecDropout.convert_to_standard_in(self.encoder)
         self.pooler = BERTPooler(dim)
         self.D = None
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        def reset_params(m):
+            if isinstance(m, (q.PositionWiseFeedforward, q.MultiHeadAttention, torch.nn.LayerNorm)):
+                m.reset_parameters()
+        self.apply(reset_params)
 
     def forward(self, input_ids, token_type_ids=None, mask=None):
         """ --> adapted from Hugging Face BERT """

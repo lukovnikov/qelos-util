@@ -42,6 +42,7 @@ class AdaptedBERTEncoderSingle(torch.nn.Module):
         if self.numout >= 0:
             torch.nn.init.normal_(self.lin.weight, 0, self.bert.init_range)
             torch.nn.init.zeros_(self.lin.bias)
+        self.bert.reset_parameters()
 
     def forward(self, inpids, ret_layer_outs=False):
         """
@@ -161,6 +162,10 @@ class AdaptedBERTCompare(torch.nn.Module):
             specialmaps[oldvocab[self.oldvocab_norel_tok]] = [bert.D[self.norel_tok]]
         self.right_enc = AdaptedBERTEncoderSingle(rightbert, numout=-1, oldvocab=oldvocab, specialmaps=specialmaps)
 
+    def reset_parameters(self):
+        self.left_enc.reset_parameters()
+        self.right_enc.reset_parameters()
+
     def forward(self, q, rel):
         aenc = self.left_enc(q)
         benc = self.right_enc(rel)
@@ -175,6 +180,10 @@ class AdaptedBERTCompareSlotPtr(AdaptedBERTCompare):
                                                         share_left_right=share_left_right)
         self.linear = torch.nn.Linear(bert.dim, 2)
         self.sm = torch.nn.Softmax(1)
+
+    def reset_parameters(self):
+        super(AdaptedBERTCompareSlotPtr, self).reset_parameters()
+        self.linear.reset_parameters()
 
     def forward(self, q, rel1, rel2):
         qenc_final, qenc_layerouts, qenc_mask = self.left_enc(q, ret_layer_outs=True)
