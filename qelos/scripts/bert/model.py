@@ -2,6 +2,7 @@ import torch
 import qelos as q
 import numpy as np
 from copy import deepcopy
+import math
 
 
 # region special BERT models
@@ -147,6 +148,116 @@ class AdaptedBERTEncoderPair(AdaptedBERTEncoderSingle):
         return logits
 
 
+class AdaptedBERTEncoderPairSlotPtr(AdaptedBERTEncoderSingle):
+    oldvocab_norel_tok = "ft"
+    norel_tok = "—"
+    def __init__(self, bert, oldvocab=None, specialmaps={0: [0]}, **kw):
+        if self.oldvocab_norel_tok in oldvocab:
+            specialmaps[oldvocab[self.oldvocab_norel_tok]] = [bert.D[self.norel_tok]]
+        super(AdaptedBERTEncoderPairSlotPtr, self).__init__(bert, numout=0, oldvocab=oldvocab, specialmaps=specialmaps, **kw)
+        self.attlin = torch.nn.Linear(bert.dim, 2)
+        self.attsm = torch.nn.Softmax(1)
+
+    def forward(self, q, rel1, rel2):
+        """
+        :param q:   (batsize, seqlen_q)
+        :param rel1:   (batsize, seqlen_rel1)
+        :param rel2:   (batsize, seqlen_rel2)
+        :return:
+        """
+        # TODO: take into account "ft"
+        assert(len(q) == len(rel1))
+        # transform inpids
+        newinp = torch.zeros_like(q)
+        rel1idxs = torch.zeros(q.size(0), device=q.device, dtype=torch.long)
+        rel2idxs = torch.zeros_like(rel1idxs)
+        typeflip = []
+        maxlen = 0
+        for i in range(len(q)):    # iter over examples
+            k = 0
+            newinp[:, 0] = self.D["[CLS]"]
+            k += 1
+            last_nonpad = 0
+            for j in range(q.size(1)):     # iter over seqlen
+                wordpieces = self.oldD2D[q[i, j].cpu().item()]
+                for wordpiece in wordpieces:
+                    newinp[i, k] = wordpiece
+                    k += 1
+                    if newinp.size(1) <= k + 1:
+                        newinp = torch.cat([newinp, torch.zeros_like(newinp)], 1)
+                if newinp[i, k-1].cpu().item() != self.pad_id:
+                    last_nonpad = k
+                else:
+                    break
+            newinp[i, last_nonpad] = self.D["[SEP]"]
+            typeflip.append(last_nonpad)
+            k = last_nonpad + 1
+            rel1idxs[i] = k - 1
+            for j in range(rel1.size(1)):
+                wordpieces = self.oldD2D[rel1[i, j].cpu().item()]
+                for wordpiece in wordpieces:
+                    newinp[i, k] = wordpiece
+                    k += 1
+                    if newinp.size(1) <= k + 1:
+                        newinp = torch.cat([newinp, torch.zeros_like(newinp)], 1)
+                if newinp[i, k-1].cpu().item() != self.pad_id:
+                    last_nonpad = k
+                else:
+                    break
+            newinp[i, last_nonpad] = self.D["[SEP]"]
+            k = last_nonpad + 1
+            rel1idxs[i] = k - 1
+            # k = last_nonpad   # removed in favour of two [SEP]'s in between (two lines above) --> not like normal BERT
+            for j in range(rel2.size(1)):
+                wordpieces = self.oldD2D[rel2[i, j].cpu().item()]
+                for wordpiece in wordpieces:
+                    newinp[i, k] = wordpiece
+                    k += 1
+                    if newinp.size(1) <= k + 1:
+                        newinp = torch.cat([newinp, torch.zeros_like(newinp)], 1)
+                if newinp[i, k-1].cpu().item() != self.pad_id:
+                    last_nonpad = k
+                else:
+                    break
+            newinp[i, last_nonpad] = self.D["[SEP]"]
+            maxlen = max(maxlen, last_nonpad + 1)
+        newinp = newinp[:, :maxlen]
+
+        # do forward
+        typeids = torch.zeros_like(newinp)
+        for i, flip in enumerate(typeflip):
+            typeids[i, flip:] = 1
+        padmask = newinp != self.pad_id
+        layerouts, poolout = self.bert(newinp, typeids, padmask)
+
+        _ys = layerouts[-1]
+
+        # compute scores
+        scores = self.attlin(_ys)
+        qmask = typeids != 1
+        scores = scores + torch.log(qmask.float().unsqueeze(-1))
+        scores = self.attsm(scores)  # (batsize, seqlen, 2)
+
+        # get summaries
+        ys = _ys.unsqueeze(2)
+        scores = scores.unsqueeze(3)
+        b = ys * scores  # (batsize, seqlen, 2, dim)
+        summaries = b.sum(1)  # (batsize, 2, dim)
+        summaries = summaries.view(summaries.size(0), -1)  # (batsize, 2*dim)
+
+        # get relation encodings based on indexes stored before
+        rel1_enc = _ys.gather(1, rel1idxs.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, _ys.size(-1))).squeeze(1)
+        rel2_enc = _ys.gather(1, rel2idxs.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, _ys.size(-1))).squeeze(1)
+        relenc = torch.cat([rel1_enc, rel2_enc], 1)  # (batsize, 2*dim)
+
+        # compute output scores
+        dots = torch.einsum("bd,bd->b", [summaries, relenc])
+
+        # normalizin dots by dim: COMMENT THIS OUT IF DON'T WANT NORM DOTS BY DIM
+        dots = dots / math.sqrt(summaries.size(1))
+        return dots
+
+
 class AdaptedBERTCompare(torch.nn.Module):
     """
     Encodes left, encodes right, compares with a special function.
@@ -171,6 +282,8 @@ class AdaptedBERTCompare(torch.nn.Module):
         benc = self.right_enc(rel)
         # dot
         dots = torch.einsum("bd,bd->b", [aenc, benc])
+        # normalizin dots by dim: COMMENT THIS OUT IF DON'T WANT NORM DOTS BY DIM
+        dots = dots / math.sqrt(aenc.size(1))
         return dots
 
 
@@ -208,6 +321,9 @@ class AdaptedBERTCompareSlotPtr(AdaptedBERTCompare):
 
         # compute output scores
         dots = torch.einsum("bd,bd->b", [summaries, relenc])
+
+        # normalizin dots by dim: COMMENT THIS OUT IF DON'T WANT NORM DOTS BY DIM
+        dots = dots / math.sqrt(summaries.size(1))
         return dots
 
 
@@ -329,9 +445,45 @@ def test_adapted_bert_compare_slotptr(lr=0):
     print(y)
     pass
 
+
+def test_adapted_bert_encoder_pair_slotptr(lr=0):
+    vocab = "<PAD> [UNK] the a cucumber apple mango banana fart art plant ft"
+    vocab = dict(zip(vocab.split(), range(len(vocab.split()))))
+    print(vocab)
+
+    a = [
+        [1, 2, 3, 0, 0, 0, 0, 0],
+        [2, 3, 4, 5, 6, 7, 8, 0],
+        [9, 10, 0, 0, 0, 0, 0, 0]
+    ]
+    a = torch.tensor(a)
+
+    b = [
+        [1, 2, 3, 0, 0, 0, 0, 0],
+        [2, 3, 4, 5, 6, 7, 8, 0],
+        [9, 10, 0, 0, 0, 0, 0, 0]
+    ]
+    b = torch.tensor(b)
+
+    c = [
+        [1, 2, 3, 0, 0, 0, 0, 0],
+        [2, 3, 4, 5, 6, 7, 8, 0],
+        [9, 10, 0, 0, 0, 0, 0, 0]
+    ]
+    c = torch.tensor(c)
+
+    bert = q.bert.TransformerBERT.load_from_dir("../../../data/bert/bert-base/")
+    m = AdaptedBERTEncoderPairSlotPtr(bert, oldvocab=vocab)
+
+    print("made model")
+
+    y = m(a, b, c)
+    print(y)
+    pass
+
 # endregion
 
 
 if __name__ == '__main__':
     # q.argprun(test_adapted_bert_encoder_pair)
-    q.argprun(test_adapted_bert_compare_slotptr)
+    q.argprun(test_adapted_bert_encoder_pair_slotptr)
