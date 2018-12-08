@@ -43,7 +43,7 @@ class AdaptedBERTEncoderSingle(torch.nn.Module):
         if self.numout >= 0:
             torch.nn.init.normal_(self.lin.weight, 0, self.bert.init_range)
             torch.nn.init.zeros_(self.lin.bias)
-        self.bert.reset_parameters()
+        #self.bert.reset_parameters()
 
     def forward(self, inpids, ret_layer_outs=False):
         """
@@ -274,8 +274,9 @@ class AdaptedBERTCompare(torch.nn.Module):
         self.right_enc = AdaptedBERTEncoderSingle(rightbert, numout=-1, oldvocab=oldvocab, specialmaps=specialmaps)
 
     def reset_parameters(self):
-        self.left_enc.reset_parameters()
-        self.right_enc.reset_parameters()
+        #self.left_enc.reset_parameters()
+        #self.right_enc.reset_parameters()
+        pass
 
     def forward(self, q, rel):
         aenc = self.left_enc(q)
@@ -487,3 +488,4 @@ def test_adapted_bert_encoder_pair_slotptr(lr=0):
 if __name__ == '__main__':
     # q.argprun(test_adapted_bert_encoder_pair)
     q.argprun(test_adapted_bert_encoder_pair_slotptr)
+    # q.argprun(test_adapted_bert_compare_slotptr)
