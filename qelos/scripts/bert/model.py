@@ -482,6 +482,15 @@ def test_adapted_bert_encoder_pair_slotptr(lr=0):
     print(y)
     pass
 
+    # this should reset bert transformer's params only, but not bert's embeddings
+    m.bert.reset_parameters()
+    # this deletes some layers
+    del m.bert.encoder.layers[6:]
+    # m.bert.emb.word_embeddings.weight[0]
+
+    y2 = m(a, b, c)
+    pass
+
 # endregion
 
 
