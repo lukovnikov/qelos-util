@@ -280,6 +280,7 @@ class LSTMPhraseAttention(PhraseAttention):
 
 
 def test_lstm_phrase_attention(lr=0):
+    print("testing lstm phrase attention")
     m = LSTMPhraseAttention(4)
     ctx = torch.randn(2, 5, 4)
     qrys = torch.randn(2, 6, 4)
