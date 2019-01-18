@@ -7,7 +7,7 @@ import re
 __all__ = ["RNNCell", "GRUCell", "LSTMCell", "Attention", "DotAttention", "GeneralDotAttention", "AttentionBase",
            "FwdAttention", "TFDecoder", "FreeDecoder", "ThinDecoder", "LuongCell", "BahdanauCell",
            "DecoderCell", "RNNEncoder", "GRUEncoder", "LSTMEncoder", "RNNCellEncoder", "GRUCellEncoder",
-           "LSTMCellEncoder", "AttentionWithCoverage"]
+           "LSTMCellEncoder", "AttentionWithCoverage", "DecCellMerge", "ConcatDecCellMerge", "LuongDecCellMerge"]
 
 
 # region recurrent cells
@@ -771,9 +771,40 @@ class BasicDecoderCell(torch.nn.Module):
         return outs
 
 
+class DecCellMerge(torch.nn.Module):
+    def forward(self, core_out, summary, core_inp):
+        """
+        :param core_out:    (batsize, decdim) output of core rnn (at time t)
+        :param summary:     (batsize, encdim) attention summary (at time t)
+        :param core_inp:    (batsize, dim) input to core rnn (at time t)
+        :return:
+        """
+        raise NotImplemented()
+
+
+class ConcatDecCellMerge(DecCellMerge):    # concat
+    def forward(self, core_out, summ, _):
+        return torch.cat([core_out, summ], 1)
+
+
+class LuongDecCellMerge(DecCellMerge):  # !!! UNTESTED TODO: test
+    def __init__(self, coredim, encdim, outdim=None, act=torch.nn.Tanh(), **kw):
+        super(LuongDecCellMerge, self).__init__(**kw)
+        outdim = coredim if outdim is None else outdim
+        self.lin = torch.nn.Linear(coredim + encdim, outdim, bias=False)
+        self.act = act
+
+    def forward(self, coreout, summ, _):
+        z = torch.cat([coreout, summ], 1)
+        z = self.lin(z)
+        z = self.act(z)
+        return z
+
+
 class LuongCell(torch.nn.Module):
-    def __init__(self, emb=None, core=None, att=None, merge=None, out=None,
-                 feed_att=False, return_alphas=False, return_scores=False, return_other=False, **kw):
+    def __init__(self, emb=None, core=None, att=None, merge:DecCellMerge=ConcatDecCellMerge(),
+                 out=None, feed_att=False, return_alphas=False, return_scores=False, return_other=False,
+                 dropout=0, **kw):
         """
 
         :param emb:
@@ -787,17 +818,17 @@ class LuongCell(torch.nn.Module):
         """
         super(LuongCell, self).__init__(**kw)
         self.emb, self.core, self.att, self.merge, self.out = emb, core, att, merge, out
-        self.return_outvecs = self.out is None
         self.feed_att = feed_att
-        self._h_hat_tm1 = None
-        self.h_hat_0 = None
+        self._outvec_tm1 = None    # previous attention summary
+        self.outvec_t0 = None
         self.return_alphas = return_alphas
         self.return_scores = return_scores
         self.return_other = return_other
+        self.dropout = torch.nn.Dropout(dropout)
 
     def batch_reset(self):
-        self.h_hat_0 = None
-        self._h_hat_tm1 = None
+        self.outvec_t0 = None
+        self._outvec_tm1 = None
 
     def forward(self, x_t, ctx=None, ctx_mask=None, **kw):
         assert (ctx is not None)
@@ -805,29 +836,33 @@ class LuongCell(torch.nn.Module):
         if isinstance(self.out, AutoMaskedOut):
             self.out.update(x_t)
 
-        embs = self.emb(x_t)
-        if q.issequence(embs) and len(embs) == 2:
+        embs = self.emb(x_t)        # embed input tokens
+        if q.issequence(embs) and len(embs) == 2:   # unpack if necessary
             embs, mask = embs
 
-        core_inp = embs
         if self.feed_att:
-            if self._h_hat_tm1 is None:
-                assert (self.h_hat_0 is not None)   #"h_hat_0 must be set when feed_att=True"
-                self._h_hat_tm1 = self.h_hat_0
-            core_inp = torch.cat([core_inp, self._h_hat_tm1], 1)
-        core_out = self.core(core_inp)
+            if self._outvec_tm1 is None:
+                assert (self.outvec_t0 is not None)   #"h_hat_0 must be set when feed_att=True"
+                self._outvec_tm1 = self.outvec_t0
+            core_inp = torch.cat([embs, self._outvec_tm1], 1)     # append previous attention summary
+        else:
+            core_inp = embs
 
-        alphas, summaries, scores = self.att(core_out, ctx, ctx_mask=ctx_mask, values=ctx)
+        core_out = self.core(core_inp)  # feed through rnn
 
-        out_vec = torch.cat([core_out, summaries], 1)
-        out_vec = self.merge(out_vec) if self.merge is not None else out_vec
-        self._h_hat_tm1 = out_vec
+        alphas, summaries, scores = self.att(core_out, ctx, ctx_mask=ctx_mask, values=ctx)  # do attention
+        out_vec = self.merge(core_out, summaries, core_inp)
+        out_vec = self.dropout(out_vec)
+        self._outvec_tm1 = out_vec      # store outvec (this is how Luong, 2015 does it)
 
         ret = tuple()
-        if not self.return_outvecs:
-            out_vec = self.out(out_vec)
-        ret += (out_vec,)
+        if self.out is None:
+            ret += (out_vec,)
+        else:
+            _out_vec = self.out(out_vec)
+            ret += (_out_vec,)
 
+        # other returns
         if self.return_alphas:
             ret += (alphas,)
         if self.return_scores:
@@ -848,7 +883,6 @@ class BahdanauCell(torch.nn.Module):
                  return_alphas=False, return_scores=False, return_other=False, **kw):
         super(BahdanauCell, self).__init__(**kw)
         self.emb, self.core1, self.core2, self.att, self.out = emb, core1, core2, att, out
-        self.return_outvecs = self.out is None
         self.summ_0 = None
         self._summ_tm1 = None
         self.return_alphas = return_alphas
@@ -861,6 +895,7 @@ class BahdanauCell(torch.nn.Module):
 
     def forward(self, x_t, ctx=None, ctx_mask=None, **kw):
         assert (ctx is not None)
+        print("WARNING: BahdanauCell outdated")
 
         if isinstance(self.out, AutoMaskedOut):
             self.out.update(x_t)
@@ -885,7 +920,7 @@ class BahdanauCell(torch.nn.Module):
         out_vec = core_out
 
         ret = tuple()
-        if self.return_outvecs:
+        if self.out is None:
             ret += (out_vec,)
         else:
             out_scores = self.out(out_vec)

@@ -181,6 +181,12 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
         trainlosses.extend(loss_val)
 
     cost = trainlosses[0]
+    # penalties
+    penalties = 0
+    for loss_obj, trainloss in zip(losses, trainlosses):
+        if isinstance(loss_obj.loss, q.loss.PenaltyGetter):
+            penalties += trainloss
+    cost = cost + penalties
 
     if torch.isnan(cost).any():
         print("Cost is NaN!")
@@ -335,6 +341,153 @@ def run_training(run_train_epoch=None, run_valid_epoch=None, max_epochs=1, valid
         current_epoch += 1
         stop_training = any([e() for e in check_stop])
         stop_training = stop_training or (current_epoch >= max_epochs)
+
+
+def example_usage_basic():
+    # 1. define model
+    model = torch.nn.Sequential(torch.nn.Linear(5, 5),
+                                torch.nn.Softmax(-1))
+
+    # 2. define data
+    x = torch.rand(4, 5)
+    y = torch.randint(0, 5, (4,))
+    dataset = torch.utils.data.TensorDataset(x, y)
+    dataloader = torch.utils.data.DataLoader(dataset, batch_size=2, shuffle=True)
+    y_pred = model(x)
+    print(y_pred)
+
+    # 3. define losses and wrap them
+    loss = torch.nn.CrossEntropyLoss(reduction="mean")
+    loss2 = torch.nn.CrossEntropyLoss(reduction="sum")
+    loss = q.LossWrapper(loss)
+    loss2 = q.LossWrapper(loss2)
+    # print(y.size(), y_pred.size())
+    l = loss(y_pred, y)
+    print(l)
+
+    # 4. define optim
+    optim = torch.optim.SGD(model.parameters(), lr=1.)
+
+    # 5. other options (device, ...)
+    device = torch.device("cpu")
+
+    # 6. define training function (using partial)
+    trainepoch = partial(q.train_epoch, model=model, dataloader=dataloader, optim=optim, losses=[loss, loss2], device=device)
+
+    # 7. run training
+    run_training(run_train_epoch=trainepoch, max_epochs=5)
+
+
+def example_usage_full():
+    # 1. define model
+    model = torch.nn.Sequential(torch.nn.Linear(5, 5),
+                                torch.nn.Softmax(-1))
+
+    # 2. define data
+    x = torch.rand(100, 5)
+    y = torch.randint(0, 5, (100,))
+    dataset = torch.utils.data.TensorDataset(x, y)
+    traindataset, validdataset, testdataset = torch.utils.data.random_split(dataset, [70, 10, 20])
+    trainloader = torch.utils.data.DataLoader(traindataset, batch_size=2, shuffle=True)
+    validloader = torch.utils.data.DataLoader(validdataset, batch_size=2, shuffle=False)
+    testloader = torch.utils.data.DataLoader(testdataset, batch_size=2, shuffle=False)
+
+    # 3. define losses and wrap them
+    loss = torch.nn.CrossEntropyLoss(reduction="mean")
+    loss2 = torch.nn.CrossEntropyLoss(reduction="sum")
+    loss = q.LossWrapper(loss)
+    loss2 = q.LossWrapper(loss2)
+
+    # 4. define optim
+    optim = torch.optim.SGD(model.parameters(), lr=1.0)
+
+    # 5. other options (device, ...)
+    device = torch.device("cpu")
+
+    # 6. define training function (using partial)
+    trainepoch = partial(q.train_epoch, model=model, dataloader=trainloader, optim=optim, losses=[loss, loss2], device=device)
+
+    # 7. define validation function (using partial)
+    validepoch = partial(q.test_epoch, model=model, dataloader=validloader, losses=[loss, loss2], device=device)
+
+    # 8. run training
+    run_training(run_train_epoch=trainepoch, run_valid_epoch=validepoch, max_epochs=50)
+
+    # 9. run test function
+    testresults = q.test_epoch(model=model, dataloader=testloader, losses=[loss, loss2], device=device)
+    print(testresults)
+
+
+def example_usage_full_with_penalty_and_hyperparam():
+    # 1. define model
+    class Model(torch.nn.Module):
+        def __init__(self):
+            super(Model, self).__init__()
+            self.lin = torch.nn.Linear(5, 5)
+            self.sm = torch.nn.Softmax(-1)
+            self._pen = 0
+
+        def batch_reset(self):      # called before every batch
+            self._pen = 0           # resets penalty
+
+        def get_penalty(self):      # must be specified to be called by PenaltyGetter
+            return self._pen
+
+        def forward(self, _x):
+            _y = self.lin(_x)
+            self._pen = torch.sum(_y, dim=1)
+            return self.sm(_y)
+
+    model = Model()
+
+    # 2. define data
+    x = torch.rand(100, 5)
+    y = torch.randint(0, 5, (100,))
+    dataset = torch.utils.data.TensorDataset(x, y)
+    traindataset, validdataset, testdataset = torch.utils.data.random_split(dataset, [70, 10, 20])
+    trainloader = torch.utils.data.DataLoader(traindataset, batch_size=2, shuffle=True)
+    validloader = torch.utils.data.DataLoader(validdataset, batch_size=2, shuffle=False)
+    testloader = torch.utils.data.DataLoader(testdataset, batch_size=2, shuffle=False)
+
+    # 3. define losses and penalties and wrap them
+    loss = torch.nn.CrossEntropyLoss(reduction="mean")
+    loss2 = torch.nn.CrossEntropyLoss(reduction="sum")
+    penweight = q.hyperparam(1.)
+    pen = q.PenaltyGetter(model, "get_penalty", factor=penweight)
+    loss = q.LossWrapper(loss)
+    loss2 = q.LossWrapper(loss2)
+    pen = q.LossWrapper(pen)
+
+    # 4. define optim
+    optim = torch.optim.SGD(model.parameters(), lr=1.)
+
+    # 5. other options (device, ...)
+    device = torch.device("cpu")
+    def on_start_train_epoch():
+        penweight.v /= 1.2
+        print(q.v(penweight))
+
+
+    # 6. define training function (using partial)
+    trainepoch = partial(q.train_epoch, model=model, dataloader=trainloader, optim=optim, losses=[loss, loss2, pen], device=device, on_start=[on_start_train_epoch])
+
+    # 7. define validation function (using partial)
+    validepoch = partial(q.test_epoch, model=model, dataloader=validloader, losses=[loss, loss2], device=device)
+
+    # 8. run training
+    run_training(run_train_epoch=trainepoch, run_valid_epoch=validepoch, max_epochs=50)
+
+    # 9. run test function
+    testresults = q.test_epoch(model=model, dataloader=testloader, losses=[loss, loss2], device=device)
+    print(testresults)
+
+
+
+if __name__ == '__main__':
+    # example_usage_basic()
+    # example_usage_full()
+    example_usage_full_with_penalty_and_hyperparam()
+
 
 
 # endregion

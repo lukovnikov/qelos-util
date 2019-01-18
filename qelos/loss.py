@@ -10,19 +10,44 @@ import warnings
 EPS = 1e-6
 
 
-__all__ = ["Accuracy", "SeqAccuracy", "SeqElemAccuracy", "MacroBLEU", "nan2zero", "inf2zero",
-           "SmoothedCELoss", "CELoss", "DistillLoss", "LinearLoss", "SelectedLinearLoss"]
+__all__ = ["PenaltyGetter", "Accuracy", "SeqAccuracy", "SeqElemAccuracy", "MacroBLEU", "nan2zero", "inf2zero",
+           "SmoothedCELoss", "CELoss", "DistillLoss", "LinearLoss",
+           "SelectedLinearLoss"]
+
+
+class PenaltyGetter(torch.nn.Module):
+    def __init__(self, model:torch.nn.Module, name=None, factor=1., reduction="mean"):
+        super(PenaltyGetter, self).__init__()
+        self.model = model
+        self.name = name
+        self.factor = factor
+        self.reduction = reduction
+
+    def forward(self, *_, **__):
+        factor = q.v(self.factor)
+        penalty_value = 0
+        for submodule in self.model.modules():
+            if hasattr(submodule, self.name):
+                pval = getattr(submodule, self.name)()
+                if self.reduction in ["elementwise_mean", "mean"]:
+                    pval = pval.mean()
+                elif self.reduction == "sum":
+                    pval = pval.sum()
+                else:
+                    pass
+                penalty_value += pval
+        return penalty_value * factor
 
 
 class LinearLoss(torch.nn.Module):
     """ LinearLoss or NoLoss. Use this if model returns loss """
-    def __init__(self, reduction="elementwise_mean"):
+    def __init__(self, reduction="mean"):
         super(LinearLoss, self).__init__()
         self.reduction = reduction
 
     def forward(self, x, gold, **kw):
         """ x is minimized, gold is ignored (and should be None) """
-        if self.reduction == "elementwise_mean":
+        if self.reduction in ["elementwise_mean", "mean"]:
             ret = x.mean()
         elif self.reduction == "sum":
             ret = x.sum()
@@ -35,7 +60,7 @@ class SelectedLinearLoss(torch.nn.Module):
     """ Same as LinearLoss, but with selection from tuple of outputs from model (that specifies losses)
         To be used to output multiple losses from the model/ select one model output as training loss
     """
-    def __init__(self, which, reduction="elementwise_mean", **kw):
+    def __init__(self, which, reduction="mean", **kw):
         super(SelectedLinearLoss, self).__init__(**kw)
         self.which = which
         self.reduction = reduction
@@ -47,7 +72,7 @@ class SelectedLinearLoss(torch.nn.Module):
             assert(self.which == 0)
             x = model_outs
 
-        if self.reduction == "elementwise_mean":
+        if self.reduction in ["elementwise_mean", "mean"]:
             ret = x.mean()
         elif self.reduction == "sum":
             ret = x.sum()
@@ -217,7 +242,7 @@ class MacroBLEU(DiscreteLoss):      # TODO take end of sequence token into accou
 
 class CELoss(torch.nn.Module):
     """ Cross entropy loss. """
-    def __init__(self, weight=None, reduction="elementwise_mean", ignore_index=-100, mode="logits", **kw):
+    def __init__(self, weight=None, reduction="mean", ignore_index=-100, mode="logits", **kw):
         super(CELoss, self).__init__(**kw)
         self.mode = mode
         if mode in ("logprobs", "probs"):
@@ -238,7 +263,7 @@ class CELoss(torch.nn.Module):
 
 class SmoothedCELoss(torch.nn.Module):
     """ CrossEntropyLoss with label smoothing. """
-    def __init__(self, reduction="elementwise_mean", ignore_index=-100, smoothing=0., mode="logits", **kw):
+    def __init__(self, reduction="mean", ignore_index=-100, smoothing=0., mode="logits", **kw):
         super(SmoothedCELoss, self).__init__(**kw)
         self.reduction, self.ignore_indices, self.smoothing = reduction, ignore_index, smoothing
         self.mode = mode        # "logits", "probs", "logprobs"
@@ -268,7 +293,7 @@ class SmoothedCELoss(torch.nn.Module):
         mask = DiscreteLoss.get_ignore_mask(gold, self.ignore_indices).float()
         kl_div = kl_div * mask
         ret = kl_div.sum()
-        if self.reduction == "elementwise_mean":
+        if self.reduction in ["elementwise_mean", "mean"]:
             total = mask.sum()
             ret = ret / total
         elif self.reduction == "none":
@@ -278,7 +303,7 @@ class SmoothedCELoss(torch.nn.Module):
 
 class DistillLoss(torch.nn.Module):
     """ Distillation (KD) loss for sequences of categorical distributions """
-    def __init__(self, weight=None, reduction="elementwise_mean", ignore_index=-100,
+    def __init__(self, weight=None, reduction="mean", ignore_index=-100,
                  temperature=1., mixture=0.5, **kw):
         """
         :param ignore_index:    gold ids whose time steps will be ignored
@@ -327,7 +352,7 @@ class DistillLoss(torch.nn.Module):
         mask = DiscreteLoss.get_ignore_mask(hardgold, self.ignore_indices).float()
         loss = loss * mask
         ret = loss.sum()
-        if self.reduction == "elementwise_mean":
+        if self.reduction in ["elementwise_mean", "mean"]:
             total = mask.sum()
             ret = ret / total
         elif self.reduction == "none":
@@ -338,7 +363,7 @@ class DistillLoss(torch.nn.Module):
 class Accuracy(torch.nn.Module):
     """ Accuracy in the last dimension. For sequences, use SeqAccuracy """
 
-    def __init__(self, reduction="elementwise_mean", ignore_index=-100, **kw):
+    def __init__(self, reduction="mean", ignore_index=-100, **kw):
         super(Accuracy, self).__init__(**kw)
         self.reduction = reduction
         self.ignore_index = ignore_index
@@ -357,7 +382,7 @@ class Accuracy(torch.nn.Module):
         maxes, best = torch.max(x, -1)
         same = best == gold
         same = same.float()
-        if self.reduction == "elementwise_mean":
+        if self.reduction in ["elementwise_mean", "mean"]:
             if ignoremask is None:
                 total = 1.
                 for i in range(same.dim()):
@@ -376,7 +401,7 @@ class SeqAccuracy(torch.nn.Module):
     """ very basic explicit seqaccuracy implementation.
         does not support batchable sparse mask """
 
-    def __init__(self, reduction="elementwise_mean", ignore_index=-100, **kw):
+    def __init__(self, reduction="mean", ignore_index=-100, **kw):
         super(SeqAccuracy, self).__init__(**kw)
         self.reduction = reduction
         self.ignore_index = ignore_index
