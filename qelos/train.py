@@ -211,7 +211,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
 
 
 def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock("-"),
-             current_epoch=0, max_epochs=0, _train_batch=train_batch, on_start=tuple(), on_end=tuple()):
+                current_epoch=0, max_epochs=0, _train_batch=train_batch, on_start=tuple(), on_end=tuple(), print_every_batch=False):
     """
     Performs an epoch of training on given model, with data from given dataloader, using given optimizer,
     with loss computed based on given losses.
@@ -240,7 +240,10 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
         ttmsg = _train_batch(batch=_batch, model=model, optim=optim, losses=losses, device=device,
                              batch_number=i, max_batches=len(dataloader), current_epoch=current_epoch,
                              max_epochs=max_epochs)
-        tt.live(ttmsg)
+        if print_every_batch:
+            tt.msg(ttmsg)
+        else:
+            tt.live(ttmsg)
 
     tt.stoplive()
     [e() for e in on_end]
@@ -249,7 +252,7 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
 
 
 def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cpu"),
-            current_epoch=0, max_epochs=0,
+            current_epoch=0, max_epochs=0, print_every_batch=False,
             on_start=tuple(), on_start_batch=tuple(), on_end_batch=tuple(), on_end=tuple()):
     """
     Performs a test epoch. If run=True, runs, otherwise returns partially filled function.
@@ -296,14 +299,17 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
                 loss_val = [loss_val] if not q.issequence(loss_val) else loss_val
                 testlosses.extend(loss_val)
 
-            tt.live("test - Epoch {}/{} - [{}/{}]: {}".format(
-                current_epoch + 1,
-                max_epochs,
-                i + 1,
-                len(dataloader),
-                q.pp_epoch_losses(*losses)
-            )
-            )
+            ttmsg = "test - Epoch {}/{} - [{}/{}]: {}".format(
+                        current_epoch + 1,
+                        max_epochs,
+                        i + 1,
+                        len(dataloader),
+                        q.pp_epoch_losses(*losses)
+                    )
+            if print_every_batch:
+                tt.msg(ttmsg)
+            else:
+                tt.live(ttmsg)
             [e() for e in on_end_batch]
     tt.stoplive()
     [e() for e in on_end]

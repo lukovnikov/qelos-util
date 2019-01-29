@@ -429,4 +429,12 @@ class SeqAccuracy(torch.nn.Module):
             outignoremask = ignoremask.long().sum(1) > 0
         sameseqs = same.long().sum(1)
         sameseqs = sameseqs == int(same.size(1))
-        return sameseqs, outignoremask
+        sameseqs = sameseqs.float()
+        if self.reduction in ["elementwise_mean", "mean"]:
+            total = x.size(0)
+            ret = sameseqs.sum() / total
+        elif self.reduction == "sum":
+            ret = sameseqs.sum()
+        else:
+            ret = sameseqs
+        return ret
