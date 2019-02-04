@@ -94,4 +94,27 @@ class TestPadclipCollate(TestCase):
         self.assertTrue((x[:, :, :7] == y[0]).all().item() == 1)
 
 
+class TestPackUnpack(TestCase):
+    def test_pack_unpack_equal(self):
+        x = torch.randn(5, 7, 3)
+        mask = torch.tensor([
+            [1, 1, 0, 0, 0, 0, 0],
+            [1, 1, 1, 1, 1, 1, 1],
+            [1, 1, 1, 1, 1, 0, 0],
+            [1, 1, 1, 1, 1, 1, 0],
+            [1, 1, 1, 0, 0, 0, 0],
+        ])
+        x = x * mask.unsqueeze(2).float()
+        packed_seq, unsorter = q.seq_pack(x, mask)
+        print(packed_seq)
+        unpacked_seq, outmask = q.seq_unpack(packed_seq, unsorter)
+        print(outmask)
+
+        print(x)
+        print(unpacked_seq)
+        assert(torch.allclose(x, unpacked_seq))
+        assert(torch.allclose(mask, outmask))
+
+
+
 

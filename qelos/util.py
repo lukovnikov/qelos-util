@@ -116,7 +116,7 @@ def seq_pack(x, mask, ret_sorter=False):  # mask: (batsize, seqlen)
     sortedseq = torch.index_select(x, 0, sortidxs)
     sortedmsk = torch.index_select(mask, 0, sortidxs)
     sortedlens = sortedmsk.long().sum(1)
-    sortedlens = list(sortedlens.cpu().detach().numpy())
+    # sortedlens = list(sortedlens.cpu().detach().numpy())
     packedseq = torch.nn.utils.rnn.pack_padded_sequence(sortedseq, sortedlens, batch_first=True)
 
     # 4. return
