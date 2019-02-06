@@ -27,7 +27,7 @@ __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_u
            "intercat", "masked_mean", "tensor_dataset", "datacat", "dataload", "datasplit", "MixedTensorDataset",
            "BucketedRandomBatchSampler", "padclip_collate_fn", "pad_clip",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
-           "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of"]
+           "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of", "split_dataset"]
 
 # region torch-related utils
 
@@ -430,6 +430,27 @@ def dataload(*tensors, batch_size=1, shuffle=False, **kw):
         tensordataset = tensor_dataset(*tensors)
     dataloader = DataLoader(tensordataset, batch_size=batch_size, shuffle=shuffle, **kw)
     return dataloader
+
+
+from torch._utils import _accumulate
+def split_dataset(dataset, lengths=(80, 20), random=True):
+    """
+    split a dataset into non-overlapping new datasets of given lengths.
+
+    Arguments:
+        dataset (Dataset): Dataset to be split
+        lengths (sequence): lengths of splits to be produced
+    """
+    if sum(lengths) != len(dataset):
+        # lengths are proportions
+        mult = len(dataset) / sum(lengths)
+        lengths = [round(l * mult) for l in lengths]
+
+    if not random:
+        indices = torch.arange(0, sum(lengths)).long() #
+    else:
+        indices = torch.randperm(sum(lengths))
+    return [torch.utils.data.Subset(dataset, indices[offset - length:offset]) for offset, length in zip(_accumulate(lengths), lengths)]
 
 
 def datasplit(npmats, splits=(80, 20), random=True):
