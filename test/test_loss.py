@@ -114,6 +114,14 @@ class TestSmoothedCELoss(TestCase):
         print(kl*0.2 + ce*0.8)
 
 
+class TestDiffSmoothedCELoss(TestCase):
+    def test_it(self):
+        m = q.DiffSmoothedCELoss()
+        x = torch.randn(5, 6)
+        g = torch.randint(0, 6, (5,)).long()
+        l = m(x, g)
+        print(l)
+
 
 class TestDistillLoss(TestCase):
     def test_nan2zero(self):

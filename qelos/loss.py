@@ -11,7 +11,7 @@ EPS = 1e-6
 
 
 __all__ = ["PenaltyGetter", "Accuracy", "SeqAccuracy", "SeqElemAccuracy", "MacroBLEU", "nan2zero", "inf2zero",
-           "SmoothedCELoss", "CELoss", "DistillLoss", "LinearLoss",
+           "SmoothedCELoss", "CELoss", "DistillLoss", "LinearLoss", "DiffSmoothedCELoss",
            "SelectedLinearLoss"]
 
 
@@ -286,6 +286,70 @@ class SmoothedCELoss(torch.nn.Module):
         assert((_gold.sum(-1) - torch.ones_like(gold).float()).norm().item() < 1e-5)
 
         logprobs = self.sm(probs) if self.mode == "logits" else (probs if self.mode == "logprobs" else torch.log(probs))
+        kl_divs = self.kl(logprobs, _gold)
+        # kl_divs = inf2zero(kl_divs)
+        kl_div = kl_divs.sum(-1)        # (batsize, ...) kl div per element
+
+        mask = DiscreteLoss.get_ignore_mask(gold, self.ignore_indices).float()
+        kl_div = kl_div * mask
+        ret = kl_div.sum()
+        if self.reduction in ["elementwise_mean", "mean"]:
+            total = mask.sum()
+            ret = ret / total
+        elif self.reduction == "none":
+            ret = kl_div
+        return ret
+
+
+class DiffSmoothedCELoss(torch.nn.Module):
+    def __init__(self, reduction="mean", ignore_index=-100, alpha=0.7, beta=0.2, mode="logits", **kw):
+        """
+        :param reduction:
+        :param ignore_index:
+        :param alpha:   weight of predicted distribution when mixing target for correctly predicted tokens
+        :param beta:    weight of uniform distribution when mixing target for incorrectly predicted tokens (normal label smoothing)
+        :param mode:
+        :param kw:
+        """
+        super(DiffSmoothedCELoss, self).__init__(**kw)
+        self.reduction, self.ignore_indices = reduction, ignore_index
+        self.mode = mode
+        self.alpha, self.beta = alpha, beta
+        self.kl = torch.nn.KLDivLoss(reduction="none")
+        self.logsm = torch.nn.LogSoftmax(-1) if self.mode == "logits" else None
+        self.sm = torch.nn.Softmax(-1) if self.mode == "logits" else None
+
+    def forward(self, probs, gold):
+        """
+        :param probs:   (batsize, ..., vocsize) logits
+        :param gold:    (batsize, ..., ) int ids of correct class
+        :return:
+        """
+        _prob_mask_crit = -np.infty if self.mode in "logits logprobs".split() else 0
+        # construction target distribution
+        lsv = q.v(self.beta)   # get value of label smoothing hyperparam
+        assert(lsv >= 0 and lsv <= 1)
+        # mix in some masked uniform into onehot normal target
+        prob_mask = (probs > _prob_mask_crit).float()     # (batsize, ..., vocsize) where probs are > 0, reverse engineering a -infty mask applied outside
+        prob_mask_weights = lsv / prob_mask.sum(-1, keepdim=True)
+        _gold = torch.ones_like(probs) * prob_mask_weights * prob_mask
+        _gold.scatter_(-1, gold.unsqueeze(-1), (1 - lsv) + prob_mask_weights)   # (batsize, ..., vocsize) probs
+        assert((_gold.sum(-1) - torch.ones_like(gold).float()).norm().item() < 1e-5)
+
+        # mix predictive with target
+        alpha = q.v(self.alpha)
+        _probs = self.sm(probs) if self.mode == "logits" else (torch.exp(probs) if self.mode == "logprobs" else probs)
+        _gold2 = torch.zeros_like(probs)
+        _gold2.scatter_(-1, gold.unsqueeze(-1), 1)   # (batsize, ..., vocsize) probs
+        _gold2 = _probs * alpha +  _gold2 * (1 - alpha)
+        assert((_gold2.sum(-1) - torch.ones_like(gold).float()).norm().item() < 1e-5)
+
+        # mix _gold and _gold2
+        best = torch.argmax(probs, -1)
+        mixmask = (best == gold).float().unsqueeze(-1)
+        _gold = mixmask * _gold2 + (1 - mixmask) * _gold
+
+        logprobs = self.logsm(probs) if self.mode == "logits" else (probs if self.mode == "logprobs" else torch.log(probs))
         kl_divs = self.kl(logprobs, _gold)
         # kl_divs = inf2zero(kl_divs)
         kl_div = kl_divs.sum(-1)        # (batsize, ...) kl div per element
