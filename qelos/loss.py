@@ -301,7 +301,7 @@ class SmoothedCELoss(torch.nn.Module):
         return ret
 
 
-class DiffSmoothedCELoss(torch.nn.Module):
+class DiffSmoothedCELoss(torch.nn.Module):      # DON'T USE THIS: works not better than normal label smoothing
     def __init__(self, reduction="mean", ignore_index=-100, alpha=0.7, beta=0.2, mode="logits", **kw):
         """
         :param reduction:
