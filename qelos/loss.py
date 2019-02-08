@@ -286,7 +286,7 @@ class SmoothedCELoss(torch.nn.Module):
         assert((_gold.sum(-1) - torch.ones_like(gold).float()).norm().item() < 1e-5)
 
         logprobs = self.sm(probs) if self.mode == "logits" else (probs if self.mode == "logprobs" else torch.log(probs))
-        kl_divs = self.kl(logprobs, _gold)
+        kl_divs = self.kl(logprobs, _gold.detach())
         # kl_divs = inf2zero(kl_divs)
         kl_div = kl_divs.sum(-1)        # (batsize, ...) kl div per element
 
@@ -341,7 +341,7 @@ class DiffSmoothedCELoss(torch.nn.Module):      # DON'T USE THIS: works not bett
         _probs = self.sm(probs) if self.mode == "logits" else (torch.exp(probs) if self.mode == "logprobs" else probs)
         _gold2 = torch.zeros_like(probs)
         _gold2.scatter_(-1, gold.unsqueeze(-1), 1)   # (batsize, ..., vocsize) probs
-        _gold2 = _probs * alpha +  _gold2 * (1 - alpha)
+        _gold2 = _probs.detach() * alpha +  _gold2 * (1 - alpha)
         assert((_gold2.sum(-1) - torch.ones_like(gold).float()).norm().item() < 1e-5)
 
         # mix _gold and _gold2
@@ -350,7 +350,7 @@ class DiffSmoothedCELoss(torch.nn.Module):      # DON'T USE THIS: works not bett
         _gold = mixmask * _gold2 + (1 - mixmask) * _gold
 
         logprobs = self.logsm(probs) if self.mode == "logits" else (probs if self.mode == "logprobs" else torch.log(probs))
-        kl_divs = self.kl(logprobs, _gold)
+        kl_divs = self.kl(logprobs, _gold.detach())
         # kl_divs = inf2zero(kl_divs)
         kl_div = kl_divs.sum(-1)        # (batsize, ...) kl div per element
 

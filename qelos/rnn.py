@@ -1294,21 +1294,31 @@ class LSTMCellEncoder(RecCellEncoder):
 
 # region automasker
 class AutoMaskedOut(torch.nn.Module):
-    def __init__(self, automasker=None, **kw):
+    def __init__(self, core, automasker=None, do_softmax=False, do_logsoftmax=False, **kw):
         """
-        :param baseout:     must support kwarg "mask" in .forward()
+        :param core:        must return scores over output tokens
         :param automasker:  an AutoMasker
         :param kw:
         """
         super(AutoMaskedOut, self).__init__(**kw)
+        assert(not (do_softmax and do_logsoftmax))
+        self.core = core
         self.automasker = automasker
+        self.sm = torch.nn.Softmax(-1) if do_softmax else (torch.nn.LogSoftmax(-1) if do_logsoftmax else None)
 
     def update(self, x):
         if self.automasker is not None:
             self.automasker.update(x)
 
     def forward(self, *args, **kw):
-        raise NotImplemented("use subclass")
+        coreret = self.core(*args, **kw)    # (batsize, [seqlen, ] outvocsize) - logits/logprobs/probs for every out voc
+        mask = self.automasker.get_out_mask().to(coreret.device).float()        # 0/1 mask
+        coreret += torch.log(mask)
+        if self.sm is not None:
+            coreret = self.sm(coreret)
+        return coreret
+
+        # raise NotImplemented("use subclass")
         # """ assumes first of *args is a tensor on the right device """
         # assert ("mask" not in kw)
         # mask = self.automasker.get_out_mask()
@@ -1323,8 +1333,8 @@ class AutoMaskedOut(torch.nn.Module):
 class AutoMasker(torch.nn.Module):
     """ Subclass this with your own rules
         How to use:
-            - write a subclass implementing at least .get_out_tokens_example()
-            - create an AutoMaskedOut with this AutoMasker and a mask-supporting output layer
+            - write a subclass implementing at least .get_out_tokens_for_history()
+            - create an AutoMaskedOut with this AutoMasker and an output layer
             - plug the AutoMaskedOut into a supporting DecoderCell (must feed its input to AutoMaskedOut)
     """
     def __init__(self, inpD, outD, mode="allow", **kw):
@@ -1344,7 +1354,7 @@ class AutoMasker(torch.nn.Module):
         self.reset()
 
     def update(self, x):
-        """ updates automasker with next element in the sequence
+        """ updates automasker with next element in the sequence (which was the output at the previous timestep)
         :param x:   (batsize,) integer ids in inpD """
         if self.training and self.test_only:
             pass
@@ -1376,11 +1386,12 @@ class AutoMasker(torch.nn.Module):
             startcreator = torch.zeros if self.mode == "allow" else torch.ones
             mask = startcreator(len(tokenses), vocsize)
             for i, tokens in enumerate(tokenses):
+                a = 1 if self.mode == "allow" else 0
                 if tokens is None:
-                    mask[i, :] = 1
+                    mask[i, :] = a
                 else:
                     for token in tokens:
-                        mask[i, self.outD[token]] = 1 if self.mode == "allow" else 0
+                        mask[i, self.outD[token]] = a
             return mask.to(self.device)
 
     def get_out_tokens(self):
