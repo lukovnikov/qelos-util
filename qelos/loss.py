@@ -334,7 +334,7 @@ class DiffSmoothedCELoss(torch.nn.Module):      # DON'T USE THIS: works not bett
         prob_mask_weights = lsv / prob_mask.sum(-1, keepdim=True)
         _gold = torch.ones_like(probs) * prob_mask_weights * prob_mask
         _gold.scatter_(-1, gold.unsqueeze(-1), (1 - lsv) + prob_mask_weights)   # (batsize, ..., vocsize) probs
-        assert((_gold.sum(-1) - torch.ones_like(gold).float()).norm().item() < 1e-5)
+        # assert((_gold.sum(-1) - torch.ones_like(gold).float()).norm().item() < 1e-5)
 
         # mix predictive with target
         alpha = q.v(self.alpha)
@@ -342,7 +342,7 @@ class DiffSmoothedCELoss(torch.nn.Module):      # DON'T USE THIS: works not bett
         _gold2 = torch.zeros_like(probs)
         _gold2.scatter_(-1, gold.unsqueeze(-1), 1)   # (batsize, ..., vocsize) probs
         _gold2 = _probs.detach() * alpha +  _gold2 * (1 - alpha)
-        assert((_gold2.sum(-1) - torch.ones_like(gold).float()).norm().item() < 1e-5)
+        # assert((_gold2.sum(-1) - torch.ones_like(gold).float()).norm().item() < 1e-5)
 
         # mix _gold and _gold2
         best = torch.argmax(probs, -1)
