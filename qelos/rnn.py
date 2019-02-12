@@ -7,7 +7,7 @@ import re
 __all__ = ["RNNCell", "GRUCell", "LSTMCell", "Attention", "DotAttention", "GeneralDotAttention", "AttentionBase",
            "FwdAttention", "TFDecoder", "FreeDecoder", "ThinDecoder", "LuongCell", "BahdanauCell",
            "DecoderCell", "RNNEncoder", "GRUEncoder", "LSTMEncoder", "RNNCellEncoder", "GRUCellEncoder",
-           "LSTMCellEncoder", "AttentionWithCoverage", "DecCellMerge", "ConcatDecCellMerge", "LuongDecCellMerge"]
+           "LSTMCellEncoder", "AttentionWithCoverage", "DecCellMerge", "ConcatDecCellMerge", "FwdDecCellMerge"]
 
 
 # region recurrent cells
@@ -787,9 +787,9 @@ class ConcatDecCellMerge(DecCellMerge):    # concat
         return torch.cat([core_out, summ], 1)
 
 
-class LuongDecCellMerge(DecCellMerge):  # !!! UNTESTED TODO: test
+class FwdDecCellMerge(DecCellMerge):  # !!! UNTESTED TODO: test
     def __init__(self, coredim, encdim, outdim=None, act=torch.nn.Tanh(), **kw):
-        super(LuongDecCellMerge, self).__init__(**kw)
+        super(FwdDecCellMerge, self).__init__(**kw)
         outdim = coredim if outdim is None else outdim
         self.lin = torch.nn.Linear(coredim + encdim, outdim, bias=False)
         self.act = act
