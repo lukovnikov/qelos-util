@@ -8,7 +8,8 @@ from copy import deepcopy
 import re
 
 
-__all__ = ["WordEmb", "SwitchedWordEmb", "WordLinout"]
+__all__ = ["WordEmb", "SwitchedWordEmb", "WordLinout",
+           "MappedWordEmb", "MappedWordLinout", "UnkReplWordLinout", "UnkReplWordEmb"]
 
 
 class VectorLoader(object):
@@ -95,13 +96,12 @@ class WordEmb(torch.nn.Embedding, VectorLoader):
         Normal word embedder. Subclasses nn.Embedding.
 
         :param dim: embedding vector dimension
-        :param worddic: worddic, must be provided
+        :param worddic: dict, str->int, must be provided
         :param _weight: (optional) value to set the weight of nn.Embedding to     (numwords, dim)
         :param max_norm: see nn.Embedding
         :param norm_type: see nn.Embedding
         :param scale_grad_by_freq: see nn.Embedding
         :param sparse: see nn.Embedding
-        :param fixed: fixed embeddings
         :param no_masking: ignore usual mask id (default "<MASK>") in this instance of WordEmb
             --> no masking (will return no mask), useful for using WordEmb in output vectors
         :param word_dropout: if >0, applies word-level embeddings (zeros complete word vectors).
@@ -321,5 +321,91 @@ class WordLinout(torch.nn.Linear):
         return ret
 
 
+def map_dict_with_repl(worddic, replacements):
+    nextid = max(worddic.values()) + 1
+    mapten = torch.arange(nextid, dtype=torch.long)
+    actualD = {k: v for k, v in worddic.items()}
+    for k in set(replacements.values()):
+        if k not in actualD:
+            actualD[k] = nextid
+            nextid += 1
+    for f, t in replacements.items():
+        mapten[actualD[f]] = actualD[t]
+        actualD[f] = actualD[t]
+    return actualD, mapten
+
+
+class MappedWordEmb(torch.nn.Module):
+    def __init__(self, dim, worddic=None, replacements=None, no_masking=False, word_dropout=0., **kw):
+        super(MappedWordEmb, self).__init__(**kw)
+        actualD, mapten = map_dict_with_repl(worddic, replacements)
+        self.D = worddic  # this is the D in which we'll be getting input
+        self.actualD = actualD
+        self.register_buffer("mapten", mapten)
+        self.emb = WordEmb(dim, worddic=actualD, no_masking=no_masking, word_dropout=word_dropout)
+
+    def forward(self, x):
+        mapped_x = self.mapten[x]
+        ret = self.emb(mapped_x)
+        return ret
+
+
+class UnkReplWordEmb(MappedWordEmb):
+    def __init__(self, dim, worddic=None, unk_tokens=None, rare_tokens=None, no_masking=False, word_dropout=0., **kw):
+        repl = {}
+        for unk_token in unk_tokens:
+            repl[unk_token] = "<UNK>"
+        for rare_token in rare_tokens:
+            repl[rare_token] = "<RARE>"
+        super(UnkReplWordEmb, self).__init__(dim, worddic=worddic, replacements=repl, no_masking=no_masking,
+                                             word_dropout=word_dropout, **kw)
+
+def test_mapped_wordemb():
+    D = dict(zip(range(10), range(10)))
+    repl = {4: 5, 5: 6, 9: 10}
+    m = MappedWordEmb(4, worddic=D, replacements=repl)
+    print(m.actualD)
+    print(m.mapten)
+
+
+class MappedWordLinout(torch.nn.Module):
+    def __init__(self, dim, worddic=None, replacements=None, bias=True, **kw):
+        super(MappedWordLinout, self).__init__(**kw)
+        actualD, mapten = map_dict_with_repl(worddic, replacements)
+        self.D = worddic
+        self.actualD = actualD
+        self.register_buffer("mapten", mapten)
+        self.linout = WordLinout(dim, actualD, bias=bias)
+
+    def forward(self, x):
+        y = self.linout(x)
+        ret = y.index_select(-1, self.mapten)
+        return ret
+
+
+class UnkReplWordLinout(MappedWordLinout):
+    def __init__(self, dim, worddic=None, unk_tokens=None, rare_tokens=None, bias=True, **kw):
+        repl = {}
+        for unk_token in unk_tokens:
+            repl[unk_token] = "<UNK>"
+        for rare_token in rare_tokens:
+            repl[rare_token] = "<RARE>"
+        super(UnkReplWordLinout, self).__init__(dim, worddic=worddic, replacements=repl,
+                                             bias=bias, **kw)
+
+
+def test_mapped_wordlinout():
+    D = dict(zip(range(10), range(10)))
+    repl = {4: 5, 5: 6, 9: 10}
+    m = MappedWordLinout(4, worddic=D, replacements=repl)
+    print(m.actualD)
+    print(m.mapten)
+    x = torch.randn(2, 3, 4)
+    y = m(x)
+
+    print(y)
+
+
 if __name__ == '__main__':
-    VectorLoader.transform_to_format("/home/denis/Downloads/glove.6B.50d.txt", "../data/glove/glove.50d")
+    test_mapped_wordlinout()
+    # VectorLoader.transform_to_format("/home/denis/Downloads/glove.6B.50d.txt", "../data/glove/glove.50d")
