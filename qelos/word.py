@@ -353,10 +353,12 @@ class MappedWordEmb(torch.nn.Module):
 class UnkReplWordEmb(MappedWordEmb):
     def __init__(self, dim, worddic=None, unk_tokens=None, rare_tokens=None, no_masking=False, word_dropout=0., **kw):
         repl = {}
-        for unk_token in unk_tokens:
-            repl[unk_token] = "<UNK>"
-        for rare_token in rare_tokens:
-            repl[rare_token] = "<RARE>"
+        if unk_tokens is not None:
+            for unk_token in unk_tokens:
+                repl[unk_token] = "<UNK>"
+        if rare_tokens is not None:
+            for rare_token in rare_tokens:
+                repl[rare_token] = "<RARE>"
         super(UnkReplWordEmb, self).__init__(dim, worddic=worddic, replacements=repl, no_masking=no_masking,
                                              word_dropout=word_dropout, **kw)
 
@@ -386,10 +388,12 @@ class MappedWordLinout(torch.nn.Module):
 class UnkReplWordLinout(MappedWordLinout):
     def __init__(self, dim, worddic=None, unk_tokens=None, rare_tokens=None, bias=True, **kw):
         repl = {}
-        for unk_token in unk_tokens:
-            repl[unk_token] = "<UNK>"
-        for rare_token in rare_tokens:
-            repl[rare_token] = "<RARE>"
+        if unk_tokens is not None:
+            for unk_token in unk_tokens:
+                repl[unk_token] = "<UNK>"
+        if rare_tokens is not None:
+            for rare_token in rare_tokens:
+                repl[rare_token] = "<RARE>"
         super(UnkReplWordLinout, self).__init__(dim, worddic=worddic, replacements=repl,
                                              bias=bias, **kw)
 
