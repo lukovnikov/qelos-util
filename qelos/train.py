@@ -7,7 +7,7 @@ from functools import partial
 
 
 __all__ = ["batch_reset", "epoch_reset", "LossWrapper", "BestSaver", "no_gold", "pp_epoch_losses",
-           "train_batch", "train_epoch", "test_epoch", "run_training", "CosineLRwithWarmup"]
+           "train_batch", "train_epoch", "test_epoch", "run_training", "CosineLRwithWarmup", "eval_loop"]
 
 
 def batch_reset(module):        # performs all resetting operations on module before using it in the next batch
@@ -128,13 +128,18 @@ def eval_loop(model, dataloader, device=torch.device("cpu")):
                 totaltestbats
             )
             )
-            outs.append(modelouts)
+            if not q.issequence(modelouts):
+                modelouts = (modelouts,)
+            if len(outs) == 0:
+                outs = [[] for e in modelouts]
+            for out_e, mout_e in zip(outs, modelouts):
+                out_e.append(mout_e)
     ttmsg = "eval done"
     tt.stoplive()
     tt.tock(ttmsg)
     tto.tock("tested")
-    out = torch.cat(outs, 0)
-    return out
+    ret = [torch.cat(out_e, 0) for out_e in outs]
+    return ret
 
 
 def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
