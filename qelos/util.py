@@ -27,7 +27,8 @@ __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_u
            "intercat", "masked_mean", "tensor_dataset", "datacat", "dataload", "datasplit", "MixedTensorDataset",
            "BucketedRandomBatchSampler", "padclip_collate_fn", "pad_clip",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
-           "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of", "split_dataset"]
+           "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of", "split_dataset",
+           "percentagebar"]
 
 # region torch-related utils
 
@@ -502,6 +503,13 @@ def recmap(x, mapf):      # datastructure, mapping function for elements
         return newset
     else:
         return mapf(x)
+
+
+percentagebarmap = "\u2581 \u2582 \u2583 \u2584 \u2585 \u2586 \u2587 \u2588 \u2589".split()
+def percentagebar(x):
+    assert(0.0 <= x <= 1.0)
+    x = round(x * (len(percentagebarmap)-1))
+    return percentagebarmap[x]
 
 
 def iscallable(x):
