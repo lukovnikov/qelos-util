@@ -75,6 +75,8 @@ class MultiHeadAttention(nn.Module):
         self.k_proj = nn.Linear(indim, numheads * self.d_k)
         self.v_proj = nn.Linear(indim, numheads * self.d_v)
 
+        # self.qkv_proj = nn.Linear(indim, numheads * (self.d_k * 2 + self.d_v))
+
         self.relpos = relpos
         self.relpos_emb = None
         self._cache_relpos_vec = None
@@ -110,6 +112,9 @@ class MultiHeadAttention(nn.Module):
         nn.init.zeros_(self.q_proj.bias)
         nn.init.zeros_(self.k_proj.bias)
         nn.init.zeros_(self.v_proj.bias)
+
+        # nn.init.normal_(self.qkv_proj.weight, mean=0, std=np.sqrt(2.0 / (self.indim + self.d_v + self.d_k * 2)))
+        # nn.init.zeros_(self.qkv_proj.bias)
 
         nn.init.xavier_normal_(self.vw_proj.weight)
         nn.init.zeros_(self.vw_proj.bias)
