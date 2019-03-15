@@ -1058,7 +1058,7 @@ class RNNLayerEncoderBase(torch.nn.Module):
         self.bias = bias
         self.layer_norm = torch.nn.ModuleList() if layer_norm is True else None
         self.dropout_in = torch.nn.Dropout(dropout_in, inplace=False) if dropout_in > 0 else None
-        self.dropout_in_shared = torch.nn.Dropout(dropout_in, inplace=False) if dropout_in_shared > 0 else None
+        self.dropout_in_shared = torch.nn.Dropout(dropout_in_shared, inplace=False) if dropout_in_shared > 0 else None
         self.dropconnect = dropconnect
         self.dropout_rec = dropout_rec
         self.make_layers()
