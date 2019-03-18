@@ -113,6 +113,21 @@ class TestSmoothedCELoss(TestCase):
         print(kl, ce)
         print(kl*0.2 + ce*0.8)
 
+    def test_it_with_weights(self):
+        weights = torch.tensor([0.1, 0.2, 0.3, 1., 1., 1.])
+        m = q.SmoothedCELoss(smoothing=0.2, mode="logits", weight=weights)
+        x = torch.randn(5, 6)
+        g = torch.randint(0, 6, (5,)).long()
+        l = m(x, g)
+        print(l)
+
+        uniform = torch.ones_like(x) / x.size(1)
+        # print(uniform)
+        kl = torch.nn.KLDivLoss(reduction="none")(x, uniform).sum(-1).mean()
+        ce = q.CELoss(mode="logits")(x, g)
+        print(kl, ce)
+        print(kl*0.2 + ce*0.8)
+
 
 class TestDiffSmoothedCELoss(TestCase):
     def test_it(self):

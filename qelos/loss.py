@@ -263,12 +263,13 @@ class CELoss(torch.nn.Module):
 
 class SmoothedCELoss(torch.nn.Module):
     """ CrossEntropyLoss with label smoothing. """
-    def __init__(self, reduction="mean", ignore_index=-100, smoothing=0., mode="logits", **kw):
+    def __init__(self, reduction="mean", ignore_index=-100, smoothing=0., mode="logits", weight=None, **kw):
         super(SmoothedCELoss, self).__init__(**kw)
         self.reduction, self.ignore_indices, self.smoothing = reduction, ignore_index, smoothing
         self.mode = mode        # "logits", "probs", "logprobs"
         self.kl = torch.nn.KLDivLoss(reduction="none")
         self.sm = torch.nn.LogSoftmax(-1) if self.mode == "logits" else None
+        self.weight = weight
 
     def forward(self, probs, gold):
         """
@@ -289,6 +290,9 @@ class SmoothedCELoss(torch.nn.Module):
         kl_divs = self.kl(logprobs, _gold.detach())
         # kl_divs = inf2zero(kl_divs)
         kl_div = kl_divs.sum(-1)        # (batsize, ...) kl div per element
+
+        if self.weight is not None:
+            kl_div = kl_div * self.weight[gold]
 
         mask = DiscreteLoss.get_ignore_mask(gold, self.ignore_indices).float()
         kl_div = kl_div * mask
