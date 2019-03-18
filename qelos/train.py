@@ -236,6 +236,9 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
     for loss in losses:
         loss.push_epoch_to_history(epoch=current_epoch-1)
         loss.reset_agg()
+        loss.loss.to(device)
+
+    model.to(device)
 
     [e() for e in on_start]
 
@@ -281,6 +284,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
         for loss_obj in losses:
             loss_obj.push_epoch_to_history()
             loss_obj.reset_agg()
+            loss_obj.loss.to(device)
         for i, _batch in enumerate(dataloader):
             [e() for e in on_start_batch]
 
