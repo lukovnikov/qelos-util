@@ -269,7 +269,10 @@ class SmoothedCELoss(torch.nn.Module):
         self.mode = mode        # "logits", "probs", "logprobs"
         self.kl = torch.nn.KLDivLoss(reduction="none")
         self.sm = torch.nn.LogSoftmax(-1) if self.mode == "logits" else None
-        self.weight = weight
+        if weight is not None:
+            self.register_buffer("weight", weight)
+        else:
+            self.weight = None
 
     def forward(self, probs, gold):
         """
