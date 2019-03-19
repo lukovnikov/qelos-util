@@ -557,10 +557,15 @@ def isstring(x):
 class StringMatrix():       # TODO: use csr_matrix here
     protectedwords = ["<MASK>", "<RARE>", "<START>", "<END>"]
 
-    def __init__(self, maxlen=None, freqcutoff=0, topnwords=None, indicate_start_end=False, indicate_start=False, indicate_end=False):
+    def __init__(self, maxlen=None, freqcutoff=0, topnwords=None,
+                 indicate_start_end=False, indicate_start=False, indicate_end=False,
+                 specialtoks=None):
         self._strings = []
-        self._wordcounts_original = dict(zip(self.protectedwords, [0] * len(self.protectedwords)))
-        self._dictionary = dict(zip(self.protectedwords, range(len(self.protectedwords))))
+        protectedwords = self.protectedwords
+        if specialtoks is not None:
+            protectedwords = self.protectedwords + specialtoks
+        self._wordcounts_original = dict(zip(protectedwords, [0] * len(protectedwords)))
+        self._dictionary = dict(zip(protectedwords, range(len(protectedwords))))
         self._dictionary_external = False
         self._rd = None
         self._next_available_id = len(self._dictionary)
