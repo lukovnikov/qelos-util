@@ -21,6 +21,7 @@ import qelos as q
 from torch.utils.data import Dataset, DataLoader
 import random
 from scipy import sparse
+from tqdm import tqdm
 
 
 __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_unpack", "iscuda", "hyperparam", "v",
@@ -579,6 +580,7 @@ class StringMatrix():       # TODO: use csr_matrix here
         self.tokenize = tokenize
         self._cache_p = None
         self.unseen_mode = False
+        self._no_rare_sorted = False
 
     def clone(self):
         n = StringMatrix()
@@ -700,9 +702,11 @@ class StringMatrix():       # TODO: use csr_matrix here
         return len(self._strings)-1
 
     def finalize(self):
+        print("finalizing")
         ret = np.zeros((len(self._strings), self._maxlen), dtype="int64")
-        for i, string in enumerate(self._strings):
+        for i, string in tqdm(enumerate(self._strings)):
             ret[i, :len(string)] = string
+        # print("done")
         self._matrix = ret
         self._do_rare_sorted()
         self._rd = {v: k for k, v in self._dictionary.items()}
@@ -710,7 +714,7 @@ class StringMatrix():       # TODO: use csr_matrix here
 
     def _do_rare_sorted(self):
         """ if dictionary is not external, sorts dictionary by counts and applies rare frequency and dictionary is changed """
-        if not self._dictionary_external:
+        if not self._dictionary_external and not self._no_rare_sorted:
             sortedwordidxs = [self.d(x) for x in self.protectedwords] + \
                              ([self.d(x) for x, y
                               in sorted(list(self._wordcounts_original.items()), key=lambda x_y: x_y[1], reverse=True)
