@@ -244,7 +244,7 @@ class SwitchedWordEmb(torch.nn.Module):
             if k in emb.D and k in selectwords:
                 if emb.D[k] != v:
                     raise q.SumTingWongException("the override emb must map same words to same id "
-                                                 "but {} maps to {} in emb.D and to {} in self.base.D"
+                                                 "but '{}' maps to {} in emb.D and to {} in self.base.D"
                                                  .format(k, emb.D[k], v))
                 # update select_mask
                 self.select_mask[v] = selid
