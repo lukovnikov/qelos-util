@@ -62,19 +62,20 @@ class LossWrapper(object):
         if epoch is not None:
             self.agg_epochs.append(epoch)
 
-    def __call__(self, pred, gold, **kw):
+    def __call__(self, pred, gold, _numex=None, **kw):
         l = self.loss(pred, gold, **kw)
 
-        numex = pred.size(0) if not q.issequence(pred) else pred[0].size(0)
+        if _numex is None:
+            _numex = pred.size(0) if not q.issequence(pred) else pred[0].size(0)
         if isinstance(l, tuple) and len(l) == 2:     # loss returns numex too
-            numex = l[1]
+            _numex = l[1]
             l = l[0]
         if isinstance(l, torch.Tensor):
             lp = l.item()
         else:
             lp = l
         self.epoch_agg_values.append(lp)
-        self.epoch_agg_sizes.append(numex)
+        self.epoch_agg_sizes.append(_numex)
         return l
 
     def _reset(self):   # full reset
@@ -168,6 +169,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
 
     batch = (batch,) if not q.issequence(batch) else batch
     batch = q.recmap(batch, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
+    numex = batch[0].size(0)
 
     if q.no_gold(losses):
         batch_in = batch
@@ -181,7 +183,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
 
     trainlosses = []
     for loss_obj in losses:
-        loss_val = loss_obj(modelouts, gold)
+        loss_val = loss_obj(modelouts, gold, _numex=numex)
         loss_val = [loss_val] if not q.issequence(loss_val) else loss_val
         trainlosses.extend(loss_val)
 
@@ -291,6 +293,8 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
             _batch = (_batch,) if not q.issequence(_batch) else _batch
             _batch = q.recmap(_batch, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
             batch = _batch
+            numex = batch[0].size(0)
+
 
             if q.no_gold(losses):
                 batch_in = batch
@@ -304,7 +308,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
 
             testlosses = []
             for loss_obj in losses:
-                loss_val = loss_obj(modelouts, gold)
+                loss_val = loss_obj(modelouts, gold, _numex=numex)
                 loss_val = [loss_val] if not q.issequence(loss_val) else loss_val
                 testlosses.extend(loss_val)
 
