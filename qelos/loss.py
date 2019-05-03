@@ -394,7 +394,7 @@ class DistillLoss(torch.nn.Module):
 
     def forward(self, probs, gold):
         """
-        :param probs:       (batsize, ..., numsym) prediction vector of logits
+        :param probs:       (batsize, ..., numsym) logit predictions
         :param gold:        tuple of (batsize, ..., numsym) soft gold logits and (batsize, ...) ints for hard gold
         """
         softgold, hardgold = gold
