@@ -201,6 +201,14 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
 
     cost.backward()
 
+    naningrad = []
+    for name, p in model.named_parameters():
+        if p.grad is not None and torch.isnan(p.grad).any():
+            naningrad.append(name)
+    if len(naningrad) > 0:
+        print("Nan in Grad!")
+        embed()
+
     [e() for e in on_before_optim_step]
     optim.step()
     [e() for e in on_after_optim_step]
