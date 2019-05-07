@@ -1,6 +1,6 @@
 import torch
 import math
-from abc import ABC
+from abc import ABC, abstractmethod
 
 
 __all__ = ["GeLU", "Swish", "RecDropout", "Stateful"]
@@ -8,6 +8,10 @@ __all__ = ["GeLU", "Swish", "RecDropout", "Stateful"]
 
 class Stateful(ABC):
     statevars = []
+
+    @abstractmethod
+    def batch_reset(self):
+        pass
 
     @classmethod
     def get_state_(cls, x):
