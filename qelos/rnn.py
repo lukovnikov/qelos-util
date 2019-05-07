@@ -2,6 +2,7 @@ import torch
 import qelos as q
 import numpy as np
 import re
+from abc import ABC, abstractproperty
 
 
 __all__ = ["RNNCell", "GRUCell", "LSTMCell", "Attention", "DotAttention", "GeneralDotAttention", "AttentionBase",
@@ -11,9 +12,9 @@ __all__ = ["RNNCell", "GRUCell", "LSTMCell", "Attention", "DotAttention", "Gener
 
 
 # region recurrent cells
-class RecCell(torch.nn.Module):
+class RecCell(torch.nn.Module, q.basic.Stateful):
     celltype = None
-
+    statevars = ["h_tm1", "dropout_rec", "dropout_in"]
     def __init__(self, indim, outdim, bias=True, dropout_in=0., dropout_rec=0., **kw):
         super(RecCell, self).__init__(**kw)
         self.indim, self.outdim, self.bias = indim, outdim, bias
@@ -82,7 +83,7 @@ class GRUCell(RecCell):
 
 class LSTMCell(RecCell):
     celltype = torch.nn.LSTMCell
-
+    statevars = ["y_tm1", "c_tm1", "dropout_in", "dropout_rec", "dropout_rec_c"]
     def __init__(self, indim, outdim, bias=True, dropout_in=0., dropout_rec=0., **kw):
         super(RecCell, self).__init__(**kw)
         self.indim, self.outdim, self.bias = indim, outdim, bias
@@ -189,7 +190,8 @@ class AttentionBase(torch.nn.Module):
         return self._forward(qry, ctx, ctx_mask=ctx_mask, values=values)
 
 
-class Attention(AttentionBase):
+class Attention(AttentionBase, q.Stateful):
+    statevars = ["alpha_tm1", "summ_tm1"]
     def __init__(self, **kw):
         super(Attention, self).__init__(**kw)
         self.alpha_tm1, self.summ_tm1 = None, None
@@ -801,7 +803,8 @@ class FwdDecCellMerge(DecCellMerge):  # !!! UNTESTED TODO: test
         return z
 
 
-class LuongCell(torch.nn.Module):
+class LuongCell(torch.nn.Module, q.Stateful):
+    statevars = ["_outvec_tm1", "outvec_t0", "_saved_ctx", "_saved_ctx_mask"]
     def __init__(self, emb=None, core=None, att=None, merge:DecCellMerge=ConcatDecCellMerge(),
                  out=None, feed_att=False, return_alphas=False, return_scores=False, return_other=False,
                  dropout=0, **kw):
@@ -825,12 +828,20 @@ class LuongCell(torch.nn.Module):
         self.return_scores = return_scores
         self.return_other = return_other
         self.dropout = torch.nn.Dropout(dropout)
+        self._saved_ctx, self._saved_ctx_mask = None, None
+
+    def save_ctx(self, ctx, ctx_mask=None):
+        self._saved_ctx, self._saved_ctx_mask = ctx, ctx_mask
 
     def batch_reset(self):
         self.outvec_t0 = None
         self._outvec_tm1 = None
+        self._saved_ctx = None
+        self._saved_ctx_mask = None
 
     def forward(self, x_t, ctx=None, ctx_mask=None, **kw):
+        if ctx is None:
+            ctx, ctx_mask = self._saved_ctx, self._saved_ctx_mask
         assert (ctx is not None)
 
         if isinstance(self.out, AutoMaskedOut):
@@ -876,9 +887,10 @@ class DecoderCell(LuongCell):
     pass
 
 
-class BahdanauCell(torch.nn.Module):
+class BahdanauCell(torch.nn.Module, q.Stateful):
     """ Almost Bahdanau-style cell, except c_tm1 is fed as input to top decoder layer (core2),
             instead of as part of state """
+    statevars = ["summ_0", "_summ_tm1"]
     def __init__(self, emb=None, core1=None, core2=None, att=None, out=None,
                  return_alphas=False, return_scores=False, return_other=False, **kw):
         super(BahdanauCell, self).__init__(**kw)

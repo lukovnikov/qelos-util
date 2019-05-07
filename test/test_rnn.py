@@ -2,12 +2,53 @@ import torch
 import qelos as q
 from unittest import TestCase
 import numpy as np
+from pprint import PrettyPrinter
 
 from qelos.rnn import OverriddenLSTMLayer, OverriddenGRULayer, OverriddenRNNLayer
 
 
 # region TEST CELLS
 class TestGRUCell(TestCase):
+    def test_stateful(self):
+        batsize = 3
+
+        pp = PrettyPrinter()
+        cell = q.GRUCell(9, 10, dropout_rec=.4)
+        cell.h_tm1 = torch.rand(batsize, 10)
+        startstate = cell.get_state()
+        print(pp.pprint(startstate))
+
+        x_0 = torch.randn(batsize, 9)
+        y_0 = cell(x_0)
+        state1 = cell.get_state()
+        print(pp.pprint(state1))
+
+        cell.set_state(startstate)
+        y_0bis = cell(x_0)
+        state1bis = cell.get_state()
+        print(pp.pprint(state1bis))
+        print(y_0)
+        print(y_0bis)
+        self.assertFalse(np.allclose(y_0.detach().numpy(), y_0bis.detach().numpy()))
+
+        cell.set_state(state1)
+        x_1 = torch.randn(batsize, 9)
+        y_1 = cell(x_1)
+        state2 = cell.get_state()
+        print(pp.pprint(state2))
+
+        cell.set_state(state1)
+        y_1bis = cell(x_1)
+        state2bis = cell.get_state()
+        print(pp.pprint(state2bis))
+
+        self.assertTrue(np.allclose(y_1.detach().numpy(), y_1bis.detach().numpy()))
+        for k, v in state2.items():
+            if isinstance(v, torch.Tensor):
+                self.assertTrue(np.allclose(state2[k].detach().numpy(), state2bis[k].detach().numpy()))
+            else:
+                self.assertTrue(state2[k] == state2bis[k])
+
     def test_gru_shapes(self):
         batsize = 5
         gru = q.GRUCell(9, 10)
@@ -67,6 +108,48 @@ class TestGRUCell(TestCase):
 
 
 class TestLSTM(TestCase):
+
+    def test_stateful(self):
+        batsize = 3
+
+        pp = PrettyPrinter()
+        cell = q.LSTMCell(9, 10, dropout_rec=.4)
+        cell.c_tm1 = torch.rand(batsize, 10)
+        cell.y_tm1 = torch.rand(batsize, 10)
+        startstate = cell.get_state()
+        # print(pp.pprint(startstate))
+
+        x_0 = torch.randn(batsize, 9)
+        y_0 = cell(x_0)
+        state1 = cell.get_state()
+        # print(pp.pprint(state1))
+
+        cell.set_state(startstate)
+        y_0bis = cell(x_0)
+        state1bis = cell.get_state()
+        # print(pp.pprint(state1bis))
+        # print(y_0)
+        # print(y_0bis)
+        self.assertFalse(np.allclose(y_0.detach().numpy(), y_0bis.detach().numpy()))
+
+        cell.set_state(state1)
+        x_1 = torch.randn(batsize, 9)
+        y_1 = cell(x_1)
+        state2 = cell.get_state()
+        print(pp.pprint(state2))
+
+        cell.set_state(state1)
+        y_1bis = cell(x_1)
+        state2bis = cell.get_state()
+        print(pp.pprint(state2bis))
+
+        self.assertTrue(np.allclose(y_1.detach().numpy(), y_1bis.detach().numpy()))
+        for k, v in state2.items():
+            if isinstance(v, torch.Tensor):
+                self.assertTrue(np.allclose(state2[k].detach().numpy(), state2bis[k].detach().numpy()))
+            else:
+                self.assertTrue(state2[k] == state2bis[k])
+
     def test_lstm_shapes(self):
         batsize = 5
         lstm = q.LSTMCell(9, 10)
@@ -664,4 +747,44 @@ class TestDecoderCell(TestCase):
         y = decoder_tf(torch.tensor(x), ctx=ctx)
 
         self.assertTrue(y.size(), (1000, 7, 100))
+
+
+class TestLuongCell(TestCase):
+    def test_stateful(self):
+        pp = PrettyPrinter()
+        D = "a b c d e f g".split()
+        D = dict(zip(D, range(len(D))))
+        emb = q.WordEmb(5, worddic=D)
+        out = q.WordLinout(10, worddic=D)
+        core = q.GRUCell(15, 5, dropout_rec=.4)
+        core.h_tm1 = torch.rand(3, 5)
+        att = q.DotAttention()
+        cell = q.LuongCell(emb=emb, core=core, att=att, out=out, feed_att=True)
+        cell._outvec_tm1 = torch.rand(3, 10)
+        x_m1 = torch.randint(0, max(D.values())+1, (3,))
+
+        ctx = torch.rand(3, 4, 5)
+        y_m1 = cell(x_m1, ctx=ctx)
+        state0 = cell.get_state()
+
+        x_0 = torch.randint(0, max(D.values())+1, (3,))
+        y_0 = cell(x_0, ctx=ctx)
+        state1 = cell.get_state()
+        cell.set_state(state0)
+
+        y_0bis = cell(x_0, ctx=ctx)
+        state1bis = cell.get_state()
+
+        print(y_0)
+        print(y_0bis)
+        print(pp.pprint(state1))
+        print(pp.pprint(state1bis))
+
+        self.assertTrue(np.allclose(y_0.detach().numpy(), y_0bis.detach().numpy()))
+        for k, v in state1.items():
+            if isinstance(v, torch.Tensor):
+                self.assertTrue(np.allclose(state1[k].detach().numpy(), state1bis[k].detach().numpy()))
+            else:
+                self.assertTrue(state1[k] == state1bis[k])
+
 # endregion
