@@ -78,10 +78,11 @@ def optimize(parameters=None, evaluation_function=None,
     i = 0
     best_params, values = None, None
     while not stop:
-        print(f"Running trial {i+1}...")
+        # print(f"Running trial {i+1}...")
         p, trial_index = axc.get_next_trial()
         print(f"trial index: {trial_index}")
-        axc.complete_trial(trial_index=trial_index, raw_data=evaluation_function(p))
+        # print(p)
+        axc.complete_trial(trial_index=trial_index, raw_data=evaluation_function(**p))
 
         best_params, values = axc.get_best_parameters()
         print(f"best params: {best_params}")
