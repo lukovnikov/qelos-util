@@ -5,10 +5,9 @@ import re
 from abc import ABC, abstractproperty
 
 
-__all__ = ["RNNCell", "GRUCell", "LSTMCell", "Attention", "DotAttention", "GeneralDotAttention", "AttentionBase",
-           "FwdAttention", "TFDecoder", "FreeDecoder", "ThinDecoder", "LuongCell", "BahdanauCell",
+__all__ = ["RNNCell", "GRUCell", "LSTMCell", "TFDecoder", "FreeDecoder", "ThinDecoder", "BeamDecoder", "LuongCell", "BahdanauCell",
            "DecoderCell", "RNNEncoder", "GRUEncoder", "LSTMEncoder", "RNNCellEncoder", "GRUCellEncoder",
-           "LSTMCellEncoder", "AttentionWithCoverage", "DecCellMerge", "ConcatDecCellMerge", "FwdDecCellMerge"]
+           "LSTMCellEncoder", "DecCellMerge", "ConcatDecCellMerge", "FwdDecCellMerge"]
 
 
 # region recurrent cells
@@ -126,349 +125,6 @@ class LSTMCell(RecCell):
         y_t, c_t = self.apply_mask_t((y_tm1, y_t), (c_tm1, c_t), mask_t=mask_t)
         self.y_tm1, self.c_tm1 = y_t, c_t
         return y_t
-
-
-class DRLSTMCell(LSTMCell):
-    def __init__(self, indim, outdim, bias=True, dropout_in=0., dropout_rec=0., **kw):
-        super(RecCell, self).__init__(**kw)
-        self.indim, self.outdim, self.bias = indim, outdim, bias
-        self.innerdim = self.indim + self.outdim
-
-        self.cell = self.celltype(2, self.innerdim, bias=self.bias)
-
-        # dropouts etc
-        self.dropout_in, self.dropout_rec, = None, None
-        if dropout_in > 0.:
-            self.dropout_in = q.RecDropout(p=dropout_in)
-        if dropout_rec > 0.:
-            self.dropout_rec = q.RecDropout(p=dropout_rec)
-        assert(isinstance(self.dropout_in, (q.Dropout, type(None))))
-        assert(isinstance(self.dropout_rec, (q.Dropout, type(None))))
-
-        self.batch_reset()
-        self.reset_parameters()
-
-    # def forward(self, x_t, xc_t=None, mask_t=None, **kw):
-    def forward(self, x_t, mask_t=None, **kw):
-        x_t, xc_t = torch.chunk(x_t, 2, 1)
-        batsize = x_t.size(0)
-        x_t, xc_t = self.dropout_in(x_t, xc_t) if self.dropout_in else x_t, xc_t
-
-        # previous states
-        y_tm1 = self.y_0.expand(batsize, -1) if self.y_tm1 is None else self.y_tm1
-        c_tm1 = self.c_0.expand(batsize, -1) if self.c_tm1 is None else self.c_tm1
-        y_tm1, c_tm1 = self.dropout_rec(y_tm1, c_tm1) if self.dropout_rec else (y_tm1, c_tm1)
-
-        c = torch.cat([c_tm1, xc_t], 1)
-        y = torch.cat([y_tm1, x_t], 1)
-
-        dum_x = torch.zeros_like(x_t[:, :2])
-
-        y_, c_ = self.cell(dum_x, (y, c))
-        c_t, yc_t = c_[:, :-self.indim], c_[:, -self.indim:]
-        y_tp1, y_t = y_[:, :-self.indim], y_[:, -self.indim:]
-
-        # next state
-        y_tp1, c_t = self.apply_mask_t((y_tm1, y_t), (c_tm1, c_t), mask_t=mask_t)
-        self.y_tm1, self.c_tm1 = y_tp1, c_t
-
-        # return y_t, yc_t
-
-        o = torch.cat([y_t, yc_t], 1)
-        return o
-
-# endregion
-
-
-# region attention
-class AttentionBase(torch.nn.Module):
-    def __init__(self, **kw):
-        super(AttentionBase, self).__init__()
-        self.sm = torch.nn.Softmax(-1)
-
-    def forward(self, qry, ctx, ctx_mask=None, values=None):
-        return self._forward(qry, ctx, ctx_mask=ctx_mask, values=values)
-
-
-class Attention(AttentionBase, q.Stateful):
-    statevars = ["alpha_tm1", "summ_tm1"]
-    def __init__(self, **kw):
-        super(Attention, self).__init__(**kw)
-        self.alpha_tm1, self.summ_tm1 = None, None
-
-    def forward(self, qry, ctx, ctx_mask=None, values=None):
-        """
-        :param ctx:     context (keys), (batsize, seqlen, dim)
-        :param qry:       query, (batsize, dim)
-        :param ctxmask: context mask (batsize, seqlen)
-        :param values:  values to summarize, (batsize, seqlen, dim), if unspecified, ctx is used
-        :return:        attention alphas (batsize, seqlen) and summary (batsize, dim)
-        """
-        alphas, summary, scores = super(Attention, self)\
-            .forward(qry, ctx, ctx_mask=ctx_mask, values=values)
-        self.alpha_tm1, self.summ_tm1 = alphas, summary
-        return alphas, summary, scores
-
-    def batch_reset(self):
-        self.alpha_tm1, self.summ_tm1 = None, None
-
-
-class SpanAttention(AttentionBase):
-    """ Single contiguous span attention with two softmaxes """
-    def __init__(self, att_start, att_end, **kw):
-        super(SpanAttention, self).__init__(**kw)
-        self.att_start, self.att_end = att_start, att_end
-
-    def forward(self, qry, ctx, ctx_mask=None, values=None):
-        qry_b, qry_e = qry.chunk(2, 1)
-        b_alphas, _, b_scores = self.att_start(qry_b, ctx, ctx_mask=ctx_mask, values=values)
-        b_cums = torch.cumsum(b_alphas, 1)
-        # TODO: add an at-least-one thing here? to ensure gap between start and end
-        e_alphas, _, e_scores = self.att_end(qry_e, ctx, ctx_mask=ctx_mask, values=values)
-        e_scores = e_scores + torch.log(b_cums.detach())
-        e_alphas = self.sm(e_scores)
-
-
-class AttentionWithCoverage(Attention):
-    def __init__(self):
-        super(AttentionWithCoverage, self).__init__()
-        self.coverage = None
-        self.cov_count = 0
-        self._cached_ctx = None
-        self.penalty = AttentionCoveragePenalty()
-
-    def reset_coverage(self):
-        self.coverage = None
-        self.cov_count = 0
-        self._cached_ctx = None
-
-    def batch_reset(self):
-        super(AttentionWithCoverage, self).batch_reset()
-        self.reset_coverage()
-        self.penalty.reset()
-
-    def forward(self, q, ctx, ctx_mask=None, values=None):
-        alphas, summary, scores = super(AttentionWithCoverage, self)\
-            .forward(q, ctx, ctx_mask=ctx_mask, values=values)
-        self.update_penalties(alphas)
-        self.update_coverage(alphas, ctx)
-        return alphas, summary, scores
-
-    def update_penalties(self, alphas):
-        if self.coverage is not None:
-            overlap = torch.min(self.coverage, alphas).sum(1)
-            self.penalty(overlap)
-
-    def update_coverage(self, alphas, ctx):
-        if self.coverage is None:
-            self.coverage = torch.zeros_like(alphas)
-            self._cached_ctx = ctx
-        assert((self._cached_ctx - ctx).norm() < 1e-5)
-        self.coverage = self.coverage + alphas.detach()
-        self.cov_count += 1
-
-
-class AttentionCoveragePenalty(object):     # TODO (was override q.Penalty)
-    __pp_name__ = "ACP"
-
-
-class AttentionWithMonotonicCoverage(AttentionWithCoverage):
-    def __init__(self):
-        super(AttentionWithMonotonicCoverage, self).__init__()
-
-    def update_coverage(self, alphas, ctx):
-        if self.coverage is None:
-            self.coverage = torch.zeros_like(alphas)
-            self._cached_ctx = ctx
-        assert ((self._cached_ctx - ctx).norm() < 1e-5)
-
-        cum_alphas = 1 - torch.cumsum(alphas, 1)
-        cum_alphas = torch.cat([cum_alphas[:, 0:1], cum_alphas[:, :-1]], 1)
-        self.coverage = self.coverage + cum_alphas
-        self.cov_count += 1
-
-
-class _DotAttention(AttentionBase):
-    def _forward(self, qry, ctx, ctx_mask=None, values=None):
-        scores = torch.bmm(ctx, qry.unsqueeze(2)).squeeze(2)
-        scores = scores + (torch.log(ctx_mask.float()) if ctx_mask is not None else 0)
-        alphas = self.sm(scores)
-        values = ctx if values is None else values
-        summary = values * alphas.unsqueeze(2)
-        summary = summary.sum(1)
-        return alphas, summary, scores
-
-
-class DotAttention(Attention, _DotAttention):
-    pass
-
-
-class DotAttentionWithCoverage(AttentionWithCoverage, _DotAttention):
-    pass
-
-
-class _GeneralDotAttention(AttentionBase):
-    def __init__(self, ctxdim=None, qdim=None, **kw):
-        super(_GeneralDotAttention, self).__init__(**kw)
-        self.W = torch.nn.Parameter(torch.empty(ctxdim, qdim))
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        torch.nn.init.xavier_normal_(self.W)
-
-    def _forward(self, qry, ctx, ctx_mask=None, values=None):
-        projqry = torch.matmul(self.W, qry)     # (batsize, ctxdim)
-        alphas, summary, scores = super(_GeneralDotAttention, self)._forward(projqry, ctx, ctx_mask=ctx_mask, values=values)
-        return alphas, summary, scores
-
-
-class GeneralDotAttention(Attention, _GeneralDotAttention):
-    pass
-
-
-class _FwdAttention(AttentionBase):
-    def __init__(self, ctxdim=None, qdim=None, attdim=None, nonlin=torch.nn.Tanh(), **kw):
-        super(_FwdAttention, self).__init__(**kw)
-        self.linear = torch.nn.Linear(ctxdim + qdim, attdim)
-        self.nonlin = nonlin
-        self.afterlinear = torch.nn.Linear(attdim, 1)
-
-    def _forward(self, qry, ctx, ctx_mask=None, values=None):
-        qry = qry.unsqueeze(1).repeat(1, ctx.size(1), 1)
-        x = torch.cat([ctx, qry], 2)
-        y = self.linear(x)      # (batsize, seqlen, attdim)
-        y = self.nonlin(y)
-        scores = self.afterlinear(y).squeeze(2)
-        scores = scores + (torch.log(ctx_mask.float()) if ctx_mask is not None else 0)
-        alphas = self.sm(scores)
-        values = ctx if values is None else values
-        summary = values * alphas.unsqueeze(2)
-        summary = summary.sum(1)
-        return alphas, summary, scores
-
-
-class FwdAttention(Attention, _FwdAttention):
-    pass
-
-
-class _FwdMulAttention(AttentionBase):
-    def __init__(self, indim=None, attdim=None, nonlin=torch.nn.Tanh(), **kw):
-        super(_FwdMulAttention, self).__init__(**kw)
-        self.linear = torch.nn.Linear(indim * 3, attdim)
-        self.nonlin = nonlin
-        self.afterlinear = torch.nn.Linear(attdim, 1)
-
-    def _forward(self, qry, ctx, ctx_mask=None, values=None):
-        qry = qry.unsqueeze(1).repeat(1, ctx.size(1), 1)
-        x = torch.cat([ctx, qry, ctx * qry], 2)
-        y = self.linear(x)      # (batsize, seqlen, attdim)
-        y = self.nonlin(y)
-        scores = self.afterlinear(y).squeeze(2)
-        scores = scores + (torch.log(ctx_mask.float()) if ctx_mask is not None else 0)
-        alphas = self.sm(scores)
-        values = ctx if values is None else values
-        summary = values * alphas.unsqueeze(2)
-        summary = summary.sum(1)
-        return alphas, summary, scores
-
-
-class FwdMulAttention(Attention, _FwdMulAttention):
-    pass
-
-
-class _SigmoidAttention(AttentionBase):
-    def __init__(self, **kw):
-        super(_SigmoidAttention, self).__init__(**kw)
-        self.sm = torch.nn.Sigmoid()
-
-    def forward(self, qry, ctx, ctx_mask=None, values=None):
-        return self._forward(qry, ctx, ctx_mask=ctx_mask, values=values)
-
-
-class RelationContentAttention(Attention):
-    """
-    Defines a composite relation-content attention.
-    - Encoded sequence must start with a special token shared across all examples (e.g. always start with <START>.
-    - in every batch, before using this attention, rel_map must be set using set_rel_map()
-    """
-
-    def __init__(self, relemb=None, query_proc=None, **kw):
-        """
-        :param relemb:      embedder for relation ids
-        :param query_proc:  (optional) module that returns query to use against content
-                            and query to use against relation.
-                            Default: take original query against concat of content and relation ctx
-        :param kw:
-        """
-        super(RelationContentAttention, self).__init__(**kw)
-        self.rel_map = None  # rel maps for current batch (batsize, seqlen, seqlen) integer ids of relations
-        self.relemb = relemb
-        self._rel_map_emb = None  # cached augmented ctx -- assumed that ctx is not changed between time step
-        self.query_proc = query_proc
-
-    def batch_reset(self):
-        super(RelationContentAttention, self).batch_reset()
-        self.rel_map = None
-        self._rel_map_emb = None
-
-    def set_rel_map(self, relmap):  # sets relation map and embeds
-        """
-        :param relmap:  (batsize, seqlen, seqlen) integers with rel ids
-        :return:
-        """
-        self.rel_map = relmap
-        rel_map_emb = self.relemb(relmap)  # (batsize, seqlen, seqlen, relembdim)
-        if isinstance(rel_map_emb, tuple) and len(rel_map_emb) == 2:
-            rel_map_emb, _ = rel_map_emb
-        self._rel_map_emb = rel_map_emb
-
-    def get_rel_ctx(self, ctx):
-        if self.alpha_tm1 is None:  # in first time step, alpha_tm1 is assumed to have been on first element of encoding
-            alphas_tm1 = torch.zeros_like(self._rel_map_emb[:, :, 0, 0])
-            alphas_tm1[:, 0] = 1.
-        else:
-            alphas_tm1 = self.alphas_tm1  # (batsize, seqlen)
-
-        alphas_tm1 = alphas_tm1.unsqueeze(2).unsqueeze(2)  # (batsize, seqlen, 1, 1)
-        rel_summ = alphas_tm1 * self._rel_map_emb
-        rel_summ = rel_summ.sum(2)  # (batsize, seqlen, relembdim)
-
-        return rel_summ
-
-    def forward(self, qry, ctx, ctx_mask=None, values=None):
-        rel_ctx = self.get_rel_ctx(ctx)
-        aug_ctx = torch.cat([ctx, rel_ctx], 2)
-        if self.query_proc is not None:
-            cont_qry, rel_qry = self.query_proc(qry)
-            qry = torch.cat([cont_qry, rel_qry], 1)
-        return super(RelationContentAttention, self).forward(qry, aug_ctx, ctx_mask=ctx_mask, values=values)
-
-
-class RelationContextAttentionSeparated(RelationContentAttention):
-    """
-    Similar as RelationContentAttention,
-    but with explicit prediction of probability of doing content-based vs relation-based attention.
-    Choices:
-    - shared decoder / separated decoder
-    - query_proc:  module that given query vector, produces tuple (content_query, relation_query, cont_vs_rel_prob)
-    """
-    def __init__(self, rel_att=None, relemb=None, query_proc=None, **kw):
-        super(RelationContextAttentionSeparated, self).__init__(relemb=relemb, query_proc=query_proc, **kw)
-        self.rel_att = rel_att
-
-    def forward(self, qry, ctx, ctx_mask=None, values=None):
-        cont_qry, rel_qry, vs_prob = self.query_proc(qry)
-        rel_ctx = self.get_rel_ctx(ctx)
-        rel_alphas, rel_summaries, rel_scores = self.rel_att(rel_qry, rel_ctx, ctx_mask=ctx_mask)
-        cont_alphas, cont_summaries, cont_scores = \
-            super(RelationContextAttentionSeparated, self)\
-            .forward(cont_qry, ctx, ctx_mask=ctx_mask, values=values)
-        vs_prob = vs_prob.unsqueeze(1)
-        alphas = rel_alphas * vs_prob + cont_alphas * (1 - vs_prob)
-        values = ctx if values is None else values
-        summary = values * alphas.unsqueeze(2)
-        summary = summary.sum(1)
-        return alphas, summary
 # endregion
 
 
@@ -549,23 +205,17 @@ class FreeDecoder(Decoder):
 
     def forward(self, xs, maxtime=None, **kw):
         """
-        :param xs:
+        :param xs:      typically (batsize, ) int ids but can be anything
         :param maxtime:
         :param kw:      are passed directly into cell at every time step
         :return:
         """
         # q.batch_reset(self.cell)
         maxtime = maxtime if maxtime is not None else self.maxtime
-        x_is_seq = True
-        if not q.issequence(xs):
-            x_is_seq = False
-            xs = (xs,)
         outs = []
+        x_ts = xs
         out_is_seq = False
         for t in range(maxtime):
-            if t == 0:      # first time step --> use xs
-                x_ts = xs
-                x_ts = x_ts[0] if not x_is_seq else x_ts
             outs_t = self.cell(x_ts, **kw)
             x_ts = self._get_xs_from_ys(outs_t)      # --> get inputs from previous outputs
             if q.issequence(outs_t):
@@ -593,164 +243,88 @@ class FreeDecoder(Decoder):
         return xs
 
 
-class DynamicOracleDecoder(Decoder):
-    def __init__(self, cell, tracker=None, mode="sample", eps=0.2, explore=0., maxtime=None, softmax=None, **kw):
-        super(DynamicOracleDecoder, self).__init__(cell, **kw)
+class BeamDecoder(Decoder):
+    def __init__(self, cell, beamsize=1, maxtime=None, **kw):
+        super(BeamDecoder, self).__init__(cell, **kw)
+        self.beamsize = beamsize
         self.maxtime = maxtime
-        self.sm = softmax
-        self.set_mode(mode)
-        self.eps = eps
-        self.explore = explore
-        #
-        self.tracker = tracker
-        self.seqacc = []        # history of what has been fed to next time step
-        self.goldacc = []       # use for supervision
-
-        self._argmax_in_eval = True
-
-    def set_mode(self, mode):
-        self.mode = mode
-        modere = re.compile("(\w+)-(\w+)")
-        m = re.match(modere, mode)
-        if m:
-            self.gold_mode, self.next_mode = m.group(1), m.group(2)
-            self.modes_split = True
-        else:
-            self.gold_mode, self.next_mode = mode, mode
-            self.modes_split = False
-
-    def batch_reset(self):
-        self.reset()
-
-    def reset(self):
-        self.seqacc = []
-        self.goldacc = []
-        self.tracker.reset()
-
-    def get_sequence(self):
-        """ get the chosen output sequence """
-        ret = torch.stack(self.seqacc, 1)
-        return ret
-
-    def get_gold_sequence(self):
-        ret = torch.stack(self.goldacc, 1)
-        return ret
 
     def forward(self, xs, maxtime=None, **kw):
         """
-        :param xs:          tuple of (eids, ...) - eids being ids of the examples
-                            --> eids not fed to decoder cell, everything else is, as usual
+        :param xs:      typically (batsize, ) int ids but can be anything
         :param maxtime:
-        :param kw:          are passed directly into cell at every time step
+        :param kw:      are passed directly into cell at every time step
         :return:
         """
         # q.batch_reset(self.cell)
-        assert(q.issequence(xs) and len(xs) == 2)
-        eids, xs = xs
         maxtime = maxtime if maxtime is not None else self.maxtime
-        x_is_seq = True
-        if not q.issequence(xs):
-            x_is_seq = False
-            xs = (xs,)
-        outs = []
+        batsize = xs.size(0) if not q.issequence(xs) else xs[0].size(0)
+        device = xs.device if not q.issequence(xs) else xs[0].device
+        x_ts = [xs for _ in range(self.beamsize)]                       # beam inputs
+        cell_states = q.Stateful.get_state(self.cell)
+        cell_states = [cell_states for _ in range(self.beamsize)]       # beam states
+        beam_seqs = [[[] for _ in range(batsize)] for _ in range(self.beamsize)]
+        beam_scores = torch.zeros(batsize, self.beamsize)
         out_is_seq = False
-        for t in range(maxtime):
-            if t == 0:      # first time step --> use xs
-                x_ts = xs
-                x_ts = x_ts[0] if not x_is_seq else x_ts
-            outs_t = self.cell(x_ts, **kw)
-            x_ts, g_ts = self._get_xs_and_gs_from_ys(outs_t, eids)
-            # --> get inputs for next time step and gold for current time step from previous outputs
+        for t in range(maxtime+1):
+            # 1. advance one timestep using the cell, record outputs and states
+            trans_scores = beam_scores.unsqueeze(2).repeat(1, 1, self.beamsize)   # (batsize, from_ray, to_ray)
+            saved_x_ts = []
+            for j in range(self.beamsize):
+                self.cell.set_state(cell_states[j])
+                outs_t_j = self.cell(x_ts[j], **kw)
+                cell_states[j] = q.Stateful.get_state(self.cell)
+                new_x_ts, x_scores = self._get_xs_and_logprobs_from_ys(outs_t_j)
+                saved_x_ts.append(new_x_ts)
+                trans_scores[:, j, :] += x_scores
+            # 2. find new best updates
+            _, best_at_t = torch.sort(trans_scores.view(batsize, -1), dim=-1, descending=True)
+            best_at_t = best_at_t[:, :self.beamsize]
+            best_at_t_from = best_at_t // self.beamsize
+            best_at_t_to = best_at_t % self.beamsize
+            best_at_t = torch.stack([best_at_t_from, best_at_t_to], 1)
+            # ==> best_at_t contains for every example, self.beamsize number of from_ray-to_ray pairs
+            #     saved_x_ts: (from ray, batsize, to ray) input tokens
+            #     trans_scores: (batsize, from ray, to ray) scores of the tokens, taking into account the ray they were taken from
+            # 3. extract new best rays
+            newbeams = [[None for _ in range(self.beamsize)] for _ in range(batsize)]
+            for i in range(batsize):
+                for j in range(self.beamsize):  # goes over new rays
+                    best_from, best_to = best_at_t_from[i, j].detach().cpu().item(), best_at_t_to[i, j].detach().cpu().item()
+                    sym_ij = saved_x_ts[best_from][i][best_to]      # which symbol to continue with
+                    prevseq_ij = beam_seqs[best_from][i]            # the sequence from where to continue
+                    seq_ij = prevseq_ij + [sym_ij]
+                    score_ij = trans_scores[i, best_from, best_to]  # score of this seq
+                    csbf = cell_states[best_from]
+                    states_ij = {k: csbf[k][i]
+                                    if hasattr(csbf, "__getitem__")
+                                    else csbf[k]
+                                 for k in csbf}
+                    newbeams[i][j] = (sym_ij, seq_ij, score_ij, states_ij)
+            # 4. populate variables using new beams
+            beam_scores = torch.zeros_like(beam_scores)
+            x_ts = [torch.zeros_like(x_ts_j) for x_ts_j in x_ts]
+            for i, newbeams_i in enumerate(newbeams):         # per example
+                for j, newbeams_ij in enumerate(newbeams_i):  # per ray
+                    x_ts[j][i] = newbeams_ij[0]
+                    beam_seqs[j][i] = newbeams_ij[1]
+                    beam_scores[i, j] = newbeams_ij[2]
+                    for k in newbeams_ij[3]:                  # per state component
+                        if hasattr(newbeams_ij[3][k], "__setitem__"):
+                            cell_states[j][k][i] = newbeams_ij[3][k]
+                        else:
+                            assert(not hasattr(cell_states[j][k], "__setitem__"))
+                            cell_states[j][k] = newbeams_ij[3][k]
+        ret = [torch.stack(beam_seqs[0][i], 0) for i in range(batsize)]
+        ret = torch.stack(ret, 0)
+        return ret
 
-            # store sampled
-            self.seqacc.append(x_ts)
-            self.goldacc.append(g_ts)
+    def _get_xs_and_logprobs_from_ys(self, ys):
+        # return torch.arange(ys.size(1)).unsqueeze(0).repeat(ys.size(0), 1), ys
+        scores, xs = torch.sort(ys, -1, descending=True)    # --> get inputs from previous outputs
+        xs, scores = xs[:, :self.beamsize], scores[:, :self.beamsize]
+        return xs, scores
 
-            if q.issequence(outs_t):
-                out_is_seq = True
-            else:
-                outs_t = (outs_t,)
-            outs.append(outs_t)
-            if self.check_terminate(eids):
-                break
-        outs = zip(*outs)
-        outs = tuple([torch.cat([a_i.unsqueeze(1) for a_i in a], 1) for a in outs])
-        outs = outs[0] if not out_is_seq else outs
-        return outs
-
-    def check_terminate(self, eids):
-        eids = eids.cpu().detach().numpy()
-        _terminates = [self.tracker.is_terminated(eid) for eid in eids]
-        _terminate = all(_terminates)
-        return _terminate
-
-    def _get_xs_and_gs_from_ys(self, ys, eids):
-        eids = eids.cpu().detach().numpy()
-        if q.issequence(ys):
-            assert(len(ys) == 1)
-            y_t = ys[0]
-        else:
-            y_t = ys
-
-        # compute prob mask
-        ymask = torch.zeros_like(y_t)
-        for i, eid in enumerate(eids):
-            validnext = self.tracker.get_valid_next(eid)            # set of ids
-            if isinstance(validnext, tuple) and len(validnext) == 2:
-                raise q.SumTingWongException("no anvt supported")
-            ymask[i, list(validnext)] = 1.
-
-        # get probs
-        goldprobs = self.sm(y_t) if self.sm is not None else y_t
-        goldprobs = goldprobs * ymask
-
-        assert(self.training)
-
-        if self.mode in "zerocost nocost".split():
-            _, y_best = y_t.max(1)          # argmax from all
-            _, gold_t = goldprobs.max(1)    # argmax from VNT
-            y_random_valid = torch.distributions.Categorical(ymask).sample()        # uniformly sampled from VNT
-            y_best_is_valid = torch.gather(ymask, 1, y_best.unsqueeze(1)).long()    # y_best is in VNT
-            nextcat = torch.stack([y_random_valid, y_best], 1)
-            x_t = torch.gather(nextcat, 1, y_best_is_valid).squeeze(1)              # if best is valid, takes best, else random valid
-            if self.mode == "nocost":   # set mask as gold if best is valid --> no improvement if best is correct
-                zero_gold = torch.zeros_like(gold_t).long()
-                goldcat = torch.stack([gold_t, zero_gold], 1)
-                gold_t = torch.gather(goldcat, 1, y_best_is_valid).squeeze(1)
-
-        else:
-
-            def _sample_using_mode(_goldprobs, _ymask, _mode):
-                if _mode == "sample":
-                    _ret_t = torch.distributions.Categorical(_goldprobs).sample()
-                elif _mode == "uniform":
-                    _ret_t = torch.distributions.Categorical(_ymask).sample()
-                elif _mode == "esample":
-                    _ret_t = torch.distributions.Categorical(_goldprobs).sample()
-                    _alt_ret_t = torch.distributions.Categorical(_ymask).sample()
-                    _epsprobs = (torch.rand_like(_ret_t) < self.eps).long()
-                    _ret_t = torch.gather(torch.stack([_ret_t, _alt_ret_t], 1), 1, _epsprobs.unsqueeze(1)).squeeze(1)
-                elif _mode == "argmax":
-                    _, _ret_t = torch.max(_goldprobs, 1)
-                else:
-                    raise q.SumTingWongException("unsupported mode: {}".format(_mode))
-                return _ret_t
-
-            gold_t = _sample_using_mode(goldprobs, ymask, self.gold_mode)
-
-            if self.explore == 0:
-                if not self.modes_split:
-                    x_t = gold_t
-                else:
-                    x_t = _sample_using_mode(goldprobs, ymask, self.next_mode)
-            else:
-                raise NotImplemented("exploring not supported")
-
-        # update tracker
-        for x_t_e, eid, gold_t_e in zip(x_t.cpu().detach().numpy(), eids, gold_t.cpu().detach().numpy()):
-            self.tracker.update(eid, x_t_e, alt_x=gold_t_e)
-
-        return x_t, gold_t
 # endregion
 
 
@@ -890,7 +464,7 @@ class DecoderCell(LuongCell):
 class BahdanauCell(torch.nn.Module, q.Stateful):
     """ Almost Bahdanau-style cell, except c_tm1 is fed as input to top decoder layer (core2),
             instead of as part of state """
-    statevars = ["summ_0", "_summ_tm1"]
+    statevars = ["summ_0", "_summ_tm1", "_saved_ctx", "_saved_ctx_mask"]
     def __init__(self, emb=None, core1=None, core2=None, att=None, out=None,
                  return_alphas=False, return_scores=False, return_other=False, **kw):
         super(BahdanauCell, self).__init__(**kw)
@@ -900,12 +474,20 @@ class BahdanauCell(torch.nn.Module, q.Stateful):
         self.return_alphas = return_alphas
         self.return_other = return_other
         self.return_scores = return_scores
+        self._saved_ctx, self._saved_ctx_mask = None, None
+
+    def save_ctx(self, ctx, ctx_mask=None):
+        self._saved_ctx, self._saved_ctx_mask = ctx, ctx_mask
 
     def batch_reset(self):
         self.summ_0 = None
         self._summ_tm1 = None
+        self._saved_ctx = None
+        self._saved_ctx_mask = None
 
     def forward(self, x_t, ctx=None, ctx_mask=None, **kw):
+        if ctx is None:
+            ctx, ctx_mask = self._saved_ctx, self._saved_ctx_mask
         assert (ctx is not None)
         print("WARNING: BahdanauCell outdated")
 

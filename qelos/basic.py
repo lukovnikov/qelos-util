@@ -13,8 +13,7 @@ class Stateful(ABC):
     def batch_reset(self):
         pass
 
-    @classmethod
-    def get_state_(cls, x):
+    def get_state(x):
         state = {}
         if isinstance(x, Stateful):
             for statevar in x.statevars:
@@ -22,32 +21,25 @@ class Stateful(ABC):
                     state_val = getattr(x, statevar)
                     if not isinstance(state_val, torch.nn.Module):
                         if isinstance(state_val, Stateful):
-                            state_val_states = cls.get_state_(state_val)
+                            state_val_states = Stateful.get_state(state_val)
                             state_val_states = {".".join([statevar, k]): v for k, v in state_val_states.items()}
                             state.update(state_val_states)
                         else:
                             state[statevar] = state_val
         if isinstance(x, torch.nn.Module):
             for childname, child in x.named_children():
-                childrenstates = cls.get_state_(child)
+                childrenstates = Stateful.get_state(child)
                 childrenstates = {".".join([childname, k]): v for k, v in childrenstates.items()}
                 state.update(childrenstates)
         return state
 
-    @classmethod
-    def set_state_(cls, x, s):
+    def set_state(x, s):
         for k, v in s.items():
             xe = x
             kpieces = k.split(".")
             for kpiece in kpieces[:-1]:
                 xe = getattr(xe, kpiece)
             setattr(xe, kpieces[-1], v)
-
-    def get_state(self):
-        return self.get_state_(self)
-
-    def set_state(self, s):
-        self.set_state_(self, s)
 
 
 # region from huggingface github transformer

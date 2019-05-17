@@ -758,7 +758,7 @@ class TestLuongCell(TestCase):
         out = q.WordLinout(10, worddic=D)
         core = q.GRUCell(15, 5, dropout_rec=.4)
         core.h_tm1 = torch.rand(3, 5)
-        att = q.DotAttention()
+        att = q.BasicAttention()
         cell = q.LuongCell(emb=emb, core=core, att=att, out=out, feed_att=True)
         cell._outvec_tm1 = torch.rand(3, 10)
         x_m1 = torch.randint(0, max(D.values())+1, (3,))
@@ -788,3 +788,70 @@ class TestLuongCell(TestCase):
                 self.assertTrue(state1[k] == state1bis[k])
 
 # endregion
+
+
+class TestBeamDecoder(TestCase):
+    def test_it(self):
+        class TestModule(torch.nn.Module):
+            def __init__(self):
+                super(TestModule, self).__init__()
+
+            def forward(self, x):
+                ret = torch.tensor([1., 2., 3., 4., 5.])
+                ret = ret.unsqueeze(0).repeat(3, 1)
+                ret = torch.log(torch.softmax(ret, -1))
+                return ret
+
+            def get_state(self):
+                return {}
+
+            def set_state(self, _):
+                return
+
+        m = TestModule()
+        x = torch.tensor([0, 1, 2])
+        y = m(x)
+        print(y)
+
+        beam = q.BeamDecoder(m, beamsize=2)
+        y = beam(x, maxtime=4)
+        print(y)
+        self.assertTrue(torch.allclose(y, torch.ones_like(y)*4))
+
+    def test_beam_vs_greedy_on_random(self):
+        class TestModule(torch.nn.Module, q.Stateful):
+            statevars = ["state"]
+            def __init__(self):
+                super(TestModule, self).__init__()
+                self.transmat = torch.nn.Parameter(torch.randn(5, 5))
+                self.state = None
+
+            def batch_reset(self):
+                self.state = None
+
+            def forward(self, x):
+                if self.state is None:
+                    self.state = torch.rand(x.size(0), 7)
+                ret = self.transmat[x]
+                ret = torch.log(torch.softmax(ret, -1))
+                return ret
+
+            def get_state(self):
+                return {}
+
+            def set_state(self, _):
+                return
+
+        m = TestModule()
+        x = torch.tensor([0, 1, 2])
+        y = m(x)
+        print(y)
+
+        beam = q.BeamDecoder(m, maxtime=4, beamsize=1)
+        greedy = q.FreeDecoder(m, maxtime=5)
+        beam_y = beam(x)
+        greedy_y = greedy(x)
+        print(beam_y)
+        print(torch.max(greedy_y, -1)[1])
+        self.assertTrue(torch.all(beam_y == torch.max(greedy_y, -1)[1]))
+

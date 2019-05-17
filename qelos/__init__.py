@@ -6,4 +6,6 @@ from qelos.exceptions import *
 from qelos.rnn import *
 from qelos.train import *
 from qelos.loss import *
+from qelos.att import *
 import qelos.bert as bert
+import qelos.pikax as pikax
