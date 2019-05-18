@@ -1075,7 +1075,7 @@ class ReduceLROnPlateau(object):
         else:
             self.num_bad_epochs += 1
 
-        if self.warmup_counter > 0:
+        if self.warmup_counter >= 0:
             self.warmup_counter -= 1
 
         if self.in_cooldown:
