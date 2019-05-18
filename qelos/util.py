@@ -10,6 +10,8 @@ import pickle
 import nltk
 import traceback
 from copy import deepcopy as deepcopy
+from torch._six import inf
+from torch.optim import Optimizer
 
 import numpy as np
 import unidecode
