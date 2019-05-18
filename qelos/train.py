@@ -225,7 +225,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
     return ttmsg
 
 
-def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock("-"),
+def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=torch.device("cpu"), tt=q.ticktock(" -"),
                 current_epoch=0, max_epochs=0, _train_batch=train_batch, on_start=tuple(), on_end=tuple(), print_every_batch=False):
     """
     Performs an epoch of training on given model, with data from given dataloader, using given optimizer,
@@ -286,7 +286,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
     :param on_end:
     :return:
     """
-    tt = q.ticktock("-")
+    tt = q.ticktock(" -")
     model.eval()
     q.epoch_reset(model)
     [e() for e in on_start]
