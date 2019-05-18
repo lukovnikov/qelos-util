@@ -214,7 +214,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
     [e() for e in on_after_optim_step]
 
     ttmsg = "Ep. {}/{} - [{}/{}]: {}".format(
-                current_epoch+1,
+                f"{{:>{len(str(max_epochs))}}}".format(current_epoch+1),
                 max_epochs,
                 batch_number+1,
                 max_batches,
@@ -321,7 +321,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
                 testlosses.extend(loss_val)
 
             ttmsg = "test - Ep. {}/{} - [{}/{}]: {}".format(
-                        current_epoch + 1,
+                        f"{{:>{len(str(max_epochs))}}}".format(current_epoch + 1),
                         max_epochs,
                         i + 1,
                         len(dataloader),
@@ -356,7 +356,10 @@ def run_training(run_train_epoch=None, run_valid_epoch=None, max_epochs=1, valid
     while stop_training is not True:
         tt.tick()
         ttmsg = run_train_epoch(current_epoch=current_epoch, max_epochs=max_epochs)
-        ttmsg = "Ep. {}/{} -- {}".format(current_epoch+1, max_epochs, ttmsg)
+        ttmsg = "Ep. {}/{} -- {}".format(
+            f"{{:>{len(str(max_epochs))}}}".format(current_epoch + 1),
+            max_epochs,
+            ttmsg)
         validepoch = False
         if run_valid_epoch is not None and validinter_count % validinter == 0:
             ttmsg_v = run_valid_epoch(current_epoch=current_epoch, max_epochs=max_epochs)
