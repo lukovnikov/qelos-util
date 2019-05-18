@@ -1,4 +1,5 @@
 import json
+import qelos as q
 
 
 class HyperParameter(object):
@@ -73,28 +74,37 @@ def optimize(parameters=None, evaluation_function=None,
         parameters=parameters,
         minimize=minimize,
     )
-    print(f"maximum trials: {maxtrials}")
+    tt = q.ticktock("pikax")
+    tt.msg(f"maximum trials: {maxtrials}")
     stop = False
     i = 0
     best_params, values = None, None
+    tt.tick("started tuning")
     while not stop:
         # print(f"Running trial {i+1}...")
         p, trial_index = axc.get_next_trial()
-        print(f"trial index: {trial_index}")
+        tt.msg(f"trial index: {trial_index}")
         # print(p)
         axc.complete_trial(trial_index=trial_index, raw_data=evaluation_function(**p))
 
         best_params, values = axc.get_best_parameters()
-        print(f"best params: {best_params}")
+        tt.msg(f"best params: {best_params}")
+        tt.msg(f"values: {values}")
         # print(f"values: {values}")
         if savep is not None:
             json.dump(best_params, open(savep, "w"))
         i += 1
         stop = (i >= maxtrials if maxtrials is not None else False)
+    tt.tock("done tuning")
     best_params, values = axc.get_best_parameters()
-    print(f"best params: {best_params}")
+    tt.msg("BEST CONFIG:")
+    tt.msg(f"best params: {best_params}")
+    tt.msg(f"values: {values}")
     # print(f"values: {values}")
     if savep is not None:
-        json.dump(best_params, open(savep, "w"))
+        json.dump({"best_params": best_params,
+                   "values": values},
+                  open(savep, "w"))
+        tt.msg(f"saved in {savep}")
 
 
