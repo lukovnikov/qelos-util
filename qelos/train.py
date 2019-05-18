@@ -213,7 +213,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
     optim.step()
     [e() for e in on_after_optim_step]
 
-    ttmsg = "train - Epoch {}/{} - [{}/{}]: {}".format(
+    ttmsg = "T - Ep. {}/{} - [{}/{}]: {}".format(
                 current_epoch+1,
                 max_epochs,
                 batch_number+1,
@@ -320,7 +320,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
                 loss_val = [loss_val] if not q.issequence(loss_val) else loss_val
                 testlosses.extend(loss_val)
 
-            ttmsg = "test - Epoch {}/{} - [{}/{}]: {}".format(
+            ttmsg = "X - Ep. {}/{} - [{}/{}]: {}".format(
                         current_epoch + 1,
                         max_epochs,
                         i + 1,
@@ -349,14 +349,14 @@ def run_training(run_train_epoch=None, run_valid_epoch=None, max_epochs=1, valid
     :param print_on_valid_only:
     :return:
     """
-    tt = q.ticktock("runner")
+    tt = q.ticktock(":-")
     validinter_count = 0
     current_epoch = 0
     stop_training = current_epoch >= max_epochs
     while stop_training is not True:
         tt.tick()
         ttmsg = run_train_epoch(current_epoch=current_epoch, max_epochs=max_epochs)
-        ttmsg = "Epoch {}/{} -- {}".format(current_epoch+1, max_epochs, ttmsg)
+        ttmsg = "Ep. {}/{} -- {}".format(current_epoch+1, max_epochs, ttmsg)
         validepoch = False
         if run_valid_epoch is not None and validinter_count % validinter == 0:
             ttmsg_v = run_valid_epoch(current_epoch=current_epoch, max_epochs=max_epochs)

@@ -830,15 +830,18 @@ class ticktock(object):
             minutes = (duration // 60) % 60
             hours = (duration // 3600) % 24
             days = duration // (3600*24)
-            acc = ""
+            acc = []
             if seconds > 0:
-                acc = ("%d second" % seconds) + ("s" if seconds > 1 else "")
+                acc.append(f"{seconds} sec")
             if minutes > 0:
-                acc = ("%d minute" % minutes) + ("s" if minutes > 1 else "") + (", " + acc if len(acc) > 0 else "")
+                acc.append(f"{minutes} min")
             if hours > 0:
-                acc = ("%d hour" % hours) + ("s" if hours > 1 else "") + (", " + acc if len(acc) > 0 else "")
+                acc.append(f"{hours} hr" + ("s" if hours > 1 else ""))
             if days > 0:
-                acc = ("%d day" % days) + ("s" if days > 1 else "") + (", " + acc if len(acc) > 0 else "")
+                acc.append(f"{day} day" + ("s" if days > 1 else ""))
+            acc = acc[::-1]
+            acc = acc[:2]
+            acc = ", ".join(acc)
             return acc
         else:
             return ("%.3f second" % duration) + ("s" if duration > 1 else "")
