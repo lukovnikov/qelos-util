@@ -844,7 +844,7 @@ class ticktock(object):
             acc = ", ".join(acc)
             return acc
         else:
-            return ("%.3f second" % duration) + ("s" if duration > 1 else "")
+            return ("%.1f sec" % duration)
 
     def _live(self, x, right=None):
         if right:

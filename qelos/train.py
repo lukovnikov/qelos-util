@@ -213,7 +213,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
     optim.step()
     [e() for e in on_after_optim_step]
 
-    ttmsg = "T - Ep. {}/{} - [{}/{}]: {}".format(
+    ttmsg = "Ep. {}/{} - [{}/{}]: {}".format(
                 current_epoch+1,
                 max_epochs,
                 batch_number+1,
@@ -320,7 +320,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
                 loss_val = [loss_val] if not q.issequence(loss_val) else loss_val
                 testlosses.extend(loss_val)
 
-            ttmsg = "X - Ep. {}/{} - [{}/{}]: {}".format(
+            ttmsg = "test - Ep. {}/{} - [{}/{}]: {}".format(
                         current_epoch + 1,
                         max_epochs,
                         i + 1,
