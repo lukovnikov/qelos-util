@@ -1,4 +1,3 @@
-from ax.service.ax_client import AxClient
 import json
 
 
@@ -66,6 +65,7 @@ class FixedHP(HyperParameter):
 
 def optimize(parameters=None, evaluation_function=None,
              minimize=True, maxtrials=None, savep=None):
+    from ax.service.ax_client import AxClient
     parameters = [param.to_json() for param in parameters]
     axc = AxClient()
     axc.create_experiment(
