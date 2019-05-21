@@ -838,7 +838,7 @@ class ticktock(object):
             if hours > 0:
                 acc.append(f"{hours} hr" + ("s" if hours > 1 else ""))
             if days > 0:
-                acc.append(f"{day} day" + ("s" if days > 1 else ""))
+                acc.append(f"{days} day" + ("s" if days > 1 else ""))
             acc = acc[::-1]
             acc = acc[:2]
             acc = ", ".join(acc)
