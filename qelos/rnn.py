@@ -82,7 +82,7 @@ class GRUCell(RecCell):
 
 class LSTMCell(RecCell):
     celltype = torch.nn.LSTMCell
-    statevars = ["y_tm1", "c_tm1", "dropout_in", "dropout_rec", "dropout_rec_c"]
+    statevars = ["y_tm1", "c_tm1"]
     def __init__(self, indim, outdim, bias=True, dropout_in=0., dropout_rec=0., **kw):
         super(RecCell, self).__init__(**kw)
         self.indim, self.outdim, self.bias = indim, outdim, bias

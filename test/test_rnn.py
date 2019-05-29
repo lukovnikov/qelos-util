@@ -122,7 +122,7 @@ class TestLSTM(TestCase):
         x_0 = torch.randn(batsize, 9)
         y_0 = cell(x_0)
         state1 = cell.get_state()
-        # print(pp.pprint(state1))
+        print(f"State 1:\n{pp.pprint(state1)}")
 
         cell.set_state(startstate)
         y_0bis = cell(x_0)
