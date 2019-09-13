@@ -66,7 +66,7 @@ class SelectedLinearLoss(torch.nn.Module):
         self.reduction = reduction
 
     def forward(self, model_outs, gold, **kw):
-        if q.issequence(model_outs):
+        if q.issequence(model_outs) or isinstance(model_outs, dict):
             x = model_outs[self.which]
         else:
             assert(self.which == 0)

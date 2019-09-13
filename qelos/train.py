@@ -145,7 +145,7 @@ def eval_loop(model, dataloader, device=torch.device("cpu")):
 
 def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
                 batch_number=-1, max_batches=0, current_epoch=0, max_epochs=0,
-                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple()):
+                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(), do_backward=True):
     """
     Runs a single batch of SGD on provided batch and settings.
     :param batch:  batch to run on
@@ -169,7 +169,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
 
     batch = (batch,) if not q.issequence(batch) else batch
     batch = q.recmap(batch, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
-    numex = batch[0].size(0)
+    numex = len(batch[0])
 
     if q.no_gold(losses):
         batch_in = batch
@@ -195,11 +195,12 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
             penalties += trainloss
     cost = cost + penalties
 
-    if torch.isnan(cost).any():
+    if isinstance(cost, torch.Tensor) and torch.isnan(cost).any():
         print("Cost is NaN!")
         embed()
 
-    cost.backward()
+    if do_backward and isinstance(cost, torch.Tensor):
+        cost.backward()
 
     naningrad = []
     for name, p in model.named_parameters():
@@ -301,7 +302,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
             _batch = (_batch,) if not q.issequence(_batch) else _batch
             _batch = q.recmap(_batch, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
             batch = _batch
-            numex = batch[0].size(0)
+            numex = len(batch[0])
 
 
             if q.no_gold(losses):
