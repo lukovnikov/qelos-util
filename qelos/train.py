@@ -168,7 +168,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
     model.train()
 
     batch = (batch,) if not q.issequence(batch) else batch
-    batch = q.recmap(batch, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
+    batch = q.recmap(batch, lambda x: x.to(device) if hasattr(x, "to") else x)
     numex = len(batch[0])
 
     if q.no_gold(losses):
