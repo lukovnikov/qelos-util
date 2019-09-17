@@ -300,7 +300,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
             [e() for e in on_start_batch]
 
             _batch = (_batch,) if not q.issequence(_batch) else _batch
-            _batch = q.recmap(_batch, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
+            _batch = q.recmap(_batch, lambda x: x.to(device) if hasattr(x, "to") else x)
             batch = _batch
             numex = len(batch[0])
 
