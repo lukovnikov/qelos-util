@@ -118,7 +118,7 @@ def eval_loop(model, dataloader, device=torch.device("cpu")):
     with torch.no_grad():
         for i, batch in enumerate(dataloader):
             batch = (batch,) if not q.issequence(batch) else batch
-            batch = q.recmap(batch, lambda x: x.to(device) if isinstance(x, torch.Tensor) else x)
+            batch = q.recmap(batch, lambda x: x.to(device) if hasattr(x, "to") else x)
 
             batch_reset(model)
             modelouts = model(*batch)
@@ -139,8 +139,9 @@ def eval_loop(model, dataloader, device=torch.device("cpu")):
     tt.stoplive()
     tt.tock(ttmsg)
     tto.tock("tested")
-    ret = [torch.cat(out_e, 0) for out_e in outs]
-    return ret
+    return outs
+    # ret = [torch.cat(out_e, 0) for out_e in outs]
+    # return ret
 
 
 def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
