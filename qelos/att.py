@@ -68,7 +68,7 @@ class SimpleFwdAttComp(AttComp):
         super(SimpleFwdAttComp, self).__init__(**kw)
         self.qrylin = torch.nn.Linear(qrydim, encdim, bias=False)
         self.ctxlin = torch.nn.Linear(ctxdim, encdim, bias=False)
-        self.summ = torch.nn.Linear(encdim, bias=False)
+        self.summ = torch.nn.Linear(encdim, 1, bias=False)
 
     def forward(self, qry, ctx, ctx_mask=None):
         qryout = self.qrylin(qry)   # (batsize, encdim)
