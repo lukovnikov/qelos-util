@@ -64,18 +64,31 @@ class DotAttComp(AttComp):
 
 
 class SimpleFwdAttComp(AttComp):
-    def __init__(self, qrydim=None, ctxdim=None, encdim=None, **kw):
+    def __init__(self, qrydim=None, ctxdim=None, encdim=None, nonlin=torch.nn.Tanh(), **kw):
         super(SimpleFwdAttComp, self).__init__(**kw)
         self.qrylin = torch.nn.Linear(qrydim, encdim, bias=False)
         self.ctxlin = torch.nn.Linear(ctxdim, encdim, bias=False)
         self.summ = torch.nn.Linear(encdim, 1, bias=False)
+        self.nonlin = nonlin
 
     def forward(self, qry, ctx, ctx_mask=None):
         qryout = self.qrylin(qry)   # (batsize, encdim)
         ctxout = self.ctxlin(ctx)   # (batsize, seqlen, encdim)
         enc = qryout.unsqueeze(1) + ctxout
+        enc = self.nonlin(enc)
         out = self.summ(enc).squeeze(-1)
         return out
+
+
+class MatMulDotAttComp(DotAttComp):
+    def __init__(self, qrydim=None, ctxdim=None, **kw):
+        super(MatMulDotAttComp, self).__init__(**kw)
+        self.lin = torch.nn.LInear(qrydim, ctxdim, bias=False)
+
+    def forward(self, qry, ctx, ctx_mask=None):
+        qry = self.lin(qry)
+        ret = super(MatMulDotAttComp, self).forward(qry, ctx, ctx_mask=ctx_mask)
+        return ret
 
 
 class FwdAttComp(AttComp):
