@@ -83,7 +83,7 @@ class SimpleFwdAttComp(AttComp):
 class MatMulDotAttComp(DotAttComp):
     def __init__(self, qrydim=None, ctxdim=None, **kw):
         super(MatMulDotAttComp, self).__init__(**kw)
-        self.lin = torch.nn.LInear(qrydim, ctxdim, bias=False)
+        self.lin = torch.nn.Linear(qrydim, ctxdim, bias=False)
 
     def forward(self, qry, ctx, ctx_mask=None):
         qry = self.lin(qry)
