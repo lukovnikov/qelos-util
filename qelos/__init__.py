@@ -10,3 +10,4 @@ from qelos.att import *
 import qelos.bert as bert
 import qelos.pikax as pikax
 from qelos.allen import *
+from qelos.optim import *
