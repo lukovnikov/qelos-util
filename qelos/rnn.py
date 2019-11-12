@@ -658,6 +658,7 @@ class RNNLayerEncoderBase(torch.nn.Module):
         self.make_layers()
         self.reset_parameters()
         self.ret_all_states = False     # set to True to return all states, instead of return state of last layer
+        self.ret_states = True
 
     def make_layers(self):
         for i in range(1, len(self.dims)):
@@ -686,11 +687,12 @@ class RNNLayerEncoderBase(torch.nn.Module):
         for t in b:
             torch.nn.init.constant_(t, 0)
 
-    def forward(self, x, mask=None, h_0s=None, ret_states=False):
+    def forward(self, x, mask=None, h_0s=None, ret_states=None):
         ret = self._forward(x, mask=mask, states_0=(h_0s,), ret_states=ret_states)
         return ret
 
-    def _forward(self, x, mask=None, states_0=None, ret_states=False):
+    def _forward(self, x, mask=None, states_0=None, ret_states=None):
+        ret_states = self.ret_states if ret_states is None else ret_states
         """ top layer states return last """
         order = None
         packsorter = None
@@ -787,7 +789,7 @@ class LSTMEncoder(RNNLayerEncoderBase):
     rnnlayertype = torch.nn.LSTM
     rnnlayertype_dropout_rec = OverriddenLSTMLayer
 
-    def forward(self, x, mask=None, batsize=None, y_0s=None, c_0s=None, ret_states=False):
+    def forward(self, x, mask=None, batsize=None, y_0s=None, c_0s=None, ret_states=None):
         ret = self._forward(x, mask=mask, states_0=(y_0s, c_0s,), ret_states=ret_states)
         return ret
 # endregion
