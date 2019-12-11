@@ -209,6 +209,9 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
             naningrad.append(name)
     if len(naningrad) > 0:
         print("Nan in Grad!")
+        print("Params with naningrad:")
+        for name in naningrad:
+            print(name)
         embed()
 
     [e() for e in on_before_optim_step]
