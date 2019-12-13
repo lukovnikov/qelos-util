@@ -7,6 +7,7 @@ import json
 from copy import deepcopy
 import re
 
+import tqdm
 
 __all__ = ["WordEmb", "SwitchedWordEmb", "WordLinout",
            "MappedWordEmb", "MappedWordLinout", "UnkReplWordLinout", "UnkReplWordEmb"]
@@ -33,13 +34,20 @@ class VectorLoader(object):
         tt.tick("formatting word vectors")
         skipped = 0
         duplicate = 0
-        with open(path) as inf:
+        numlines = 0
+        dim = None
+        with open(path, "r", encoding="utf8") as inf:
+            for line in tqdm.tqdm(inf):
+                numlines += 1
+            if dim is None:
+                dim = len(re.split(r'\s', line.strip())) - 1
+        mat = np.zeros((numlines, dim), dtype="float32")
+        with open(path, "r", encoding="utf8") as inf:
             words = []
             wordset = set()
-            vecs = []
             dim = None
             i = 0
-            for line in inf:
+            for line in tqdm.tqdm(inf):
                 splits = re.split(r'\s', line.strip())
                 if dim is None:
                     dim = len(splits) - 1
@@ -56,13 +64,13 @@ class VectorLoader(object):
                     continue
                 wordset.add(splits[0])
                 words.append(splits[0])
-                vecs.append([float(x) for x in splits[1:]])
+                mat[i, :] = [float(x) for x in splits[1:]]
+                # vecs.append([float(x) for x in splits[1:]])
                     # raise q.SumTingWongException()
                 i += 1
                 # if i == 500: break
-                tt.live("{}".format(i))
-            tt.stoplive()
-            mat = np.array(vecs).astype("float32")
+            # mat = np.array(vecs).astype("float32")
+            mat = mat[:i, :]
             np.save(outpath+".npy", mat)
             with open(outpath + ".words", "w") as outwordsf:
                 json.dump(words, outwordsf)
