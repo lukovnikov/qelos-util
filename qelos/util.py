@@ -3,6 +3,7 @@ import collections
 import inspect
 import re
 import os
+import shutil
 import signal
 import sys
 from datetime import datetime as dt
@@ -25,6 +26,7 @@ import random
 from scipy import sparse
 from tqdm import tqdm
 import ujson as json
+import pickle as pkl
 
 
 __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_unpack", "iscuda", "hyperparam", "v",
@@ -33,7 +35,7 @@ __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_u
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
            "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of", "split_dataset",
            "percentagebar",
-           "get_init_args", "save_run", "load_run", "init_save_run"]
+           "get_init_args", "save_run", "load_run", "init_save_run", "save_dataset", "load_dataset"]
 
 
 def get_init_args(self, locals):
@@ -43,7 +45,7 @@ def get_init_args(self, locals):
     return args
 
 
-def init_save_run(filepath=None, path=None):
+def init_save_run(filepath=None, path=None, overwrite=None):
     assert(filepath is None or path is None)
     assert(filepath is not None or path is not None)
     if filepath is not None:
@@ -51,19 +53,30 @@ def init_save_run(filepath=None, path=None):
         p = os.path.join(filepath, "run")
     else:
         p = os.path.join(path, "run")
-    for i in range(1, int(1e6)):
-        if not os.path.exists(p + str(i)):
-            p = p + str(i)
-            break
+    if overwrite is not None:
+        p = f"{p}{overwrite}"
+        if os.path.exists(p):
+            print(f"clearing {p}")
+            # clear directory
+            for root, dirs, files in os.walk(p):
+                for f in files:
+                    os.remove(os.path.join(root, f))
+                for d in dirs:
+                    shutil.rmtree(os.path.join(root, d))
     else:
-        raise Exception("can't create directory, too many")
-    assert(not os.path.exists(p))
-    os.makedirs(p)
+        for i in range(1, int(1e6)):
+            if not os.path.exists(p + str(i)):
+                p = p + str(i)
+                break
+        else:
+            raise Exception("can't create directory, too many")
+        assert(not os.path.exists(p))
+        os.makedirs(p)
     return p
 
 
-def save_run(model, args, filepath=None, path=None):
-    p = init_save_run(filepath=filepath, path=path)
+def save_run(model, args, filepath=None, path=None, overwrite=None):
+    p = init_save_run(filepath=filepath, path=path, overwrite=overwrite)
     torch.save(model, os.path.join(p, "model.pt"))
     with open(os.path.join(p, "args.json"), "w") as f:
         json.dump(args, f, indent=4)
@@ -75,6 +88,17 @@ def load_run(p):
     with open(os.path.join(p, "args.json"), "r") as f:
         args = json.load(f)
     return model, args
+
+
+def save_dataset(d, p, name="dataset"):
+    with open(os.path.join(p, f"{name}.pkl"), "wb") as f:
+        pkl.dump(d, f, protocol=pkl.HIGHEST_PROTOCOL)
+
+
+def load_dataset(p, name="dataset"):
+    with open(os.path.join(p, f"{name}.pkl"), "rb") as f:
+        ret = pkl.load(f)
+    return ret
 
 
 class ModelSaver(object):
