@@ -18,7 +18,7 @@ class SummComp(torch.nn.Module):
 
 class Attention(torch.nn.Module):
     """ Computes phrase attention. For use with encoders and decoders from rnn.py """
-    def __init__(self, attcomp:AttComp=None, summcomp:SummComp=None, score_norm=torch.nn.Softmax(-1)):
+    def __init__(self, attcomp:AttComp=None, summcomp:SummComp=None, score_norm=torch.nn.Softmax(-1), dropout:float=0.):
         """
         :param attcomp:     used to compute attention scores
         :param summcomp:    used to compute summary
@@ -29,6 +29,7 @@ class Attention(torch.nn.Module):
         self.attcomp = attcomp if attcomp is not None else DotAttComp()
         self.summcomp = summcomp if summcomp is not None else SumSummComp()
         self.score_norm = score_norm
+        self.dropout = torch.nn.Dropout(dropout)
 
     def forward(self, qry, ctx, ctx_mask=None, values=None):
         """
@@ -40,6 +41,7 @@ class Attention(torch.nn.Module):
         """
         scores = self.attcomp(qry, ctx, ctx_mask=ctx_mask)
         scores = scores + (torch.log(ctx_mask.float()) if ctx_mask is not None else 0)
+        scores = self.dropout(torch.ones_like(scores)).clamp(0, 1) * scores
         alphas = self.score_norm(scores)
         values = ctx if values is None else values
         summary = self.summcomp(values, alphas)
