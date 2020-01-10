@@ -41,7 +41,7 @@ class Attention(torch.nn.Module):
         """
         scores = self.attcomp(qry, ctx, ctx_mask=ctx_mask)
         scores = scores + (torch.log(ctx_mask.float()) if ctx_mask is not None else 0)
-        # scores = scores + torch.log(self.dropout(torch.ones_like(scores)).clamp(0, 1))
+        scores = scores + torch.log(self.dropout(torch.ones_like(scores)).clamp(0.0001, 1))    # TODO: ensure at least one is not 0
         alphas = self.score_norm(scores)
         values = ctx if values is None else values
         summary = self.summcomp(values, alphas)
