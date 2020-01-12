@@ -856,6 +856,7 @@ def tokenize(s, preserve_patterns=None, extrasubs=True):
 
 class ticktock(object):
     """ timer-printer thingy """
+    verbose_live_when_no_ttwy = False
     def __init__(self, prefix="-", verbose=True):
         self.prefix = prefix
         self.verbose = verbose
@@ -866,7 +867,7 @@ class ticktock(object):
 
     def tick(self, state=None):
         if self.verbose and state is not None:
-            print("%s: %s" % (self.prefix, state))
+            print(f"{self.prefix}: {state}")
         self._tick()
 
     def _tick(self):
@@ -893,14 +894,21 @@ class ticktock(object):
         if self.verbose:
             prefix = prefix if prefix is not None else self.prefix
             action = action if action is not None else self.state
-            print("%s: %s in %s" % (prefix, action, self._getdurationstr(duration)))
+
+            termsize = shutil.get_terminal_size((-1, -1))
+            if termsize[0] > 0:
+                left = f"{prefix}: {action}"
+                right = f"  T: {self._getdurationstr(duration)}"
+                print(left + right.rjust(termsize[0] - len(left) - 1), end='\n')
+            else:
+                print(f"{prefix}: {action} in {self._getdurationstr(duration)}")
         return self
 
     def msg(self, action=None, prefix=None):
         if self.verbose:
             prefix = prefix if prefix is not None else self.prefix
             action = action if action is not None else self.state
-            print("%s: %s" % (prefix, action))
+            print(f"{prefix}: {action}")
         return self
 
     def _getdurationstr(self, duration):
@@ -928,23 +936,20 @@ class ticktock(object):
 
     def _live(self, x, right=None):
         if right:
-            try:
-                #ttyw = int(os.popen("stty size", "r").read().split()[1])
-                raise Exception("qsdf")
-            except Exception:
-                ttyw = None
-            if ttyw is not None:
-                sys.stdout.write(x)
-                sys.stdout.write(right.rjust(ttyw - len(x) - 2) + "\r")
+            termsize = shutil.get_terminal_size((-1, -1))
+            if termsize[0] > 0:
+                right = "  " + right
+                print(f"\r{x}" + right.rjust(termsize[0] - len(x) - 1), end='')
             else:
-                sys.stdout.write(x + "\t" + right + "\r")
+                if self.verbose_live_when_no_ttwy:
+                    print(f"\r{x} \t {right}", end='')
         else:
-            sys.stdout.write(x + "\r")
-        sys.stdout.flush()
+            print(f"\r{x}", end='')
+        # sys.stdout.flush()
 
     def live(self, x):
         if self.verbose:
-            self._live(self.prefix + ": " + x, "T: %s" % self._getdurationstr(self._tock()))
+            self._live(f"{self.prefix}: {x}", f"T: {self._getdurationstr(self._tock())}")
 
     def stoplive(self):
         if self.verbose:
