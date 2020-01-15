@@ -8,6 +8,8 @@ import signal
 import sys
 from datetime import datetime as dt
 import pickle
+from typing import List, Tuple, Union
+
 import nltk
 import traceback
 from copy import deepcopy as deepcopy
@@ -34,7 +36,7 @@ __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_u
            "BucketedRandomBatchSampler", "padclip_collate_fn", "pad_clip",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
            "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of", "split_dataset",
-           "percentagebar",
+           "percentagebar", "pad_tensors",
            "get_init_args", "save_run", "load_run", "init_save_run", "save_dataset", "load_dataset"]
 
 
@@ -91,13 +93,15 @@ def load_run(p):
 
 
 def save_dataset(d, p, name="dataset"):
+    import dill as pkl
     with open(os.path.join(p, f"{name}.pkl"), "wb") as f:
         pkl.dump(d, f, protocol=pkl.HIGHEST_PROTOCOL)
 
 
 def load_dataset(p, name="dataset"):
+    import dill as pkl
     with open(os.path.join(p, f"{name}.pkl"), "rb") as f:
-        ret = pkl.load(f)
+        ret = pkl.load(f, ignore=True)
     return ret
 
 
@@ -295,6 +299,25 @@ def masked_mean(x, dim=None, mask=None, keepdim=False):
             assert(mask.size(dim) == 1)
             ret = ret / x.size(dim)
         return ret
+
+
+def pad_tensors(x:List[torch.Tensor], dim:Union[int,Tuple[int],List[int]]=-2, value=0):
+    if isinstance(dim, (tuple, list)):
+        if len(dim) > 1:
+            x = pad_tensors(x, dim[1:])
+        dim = dim[0]
+    maxsize = max([xe.size(dim) for xe in x])
+    _x = []
+    for xe in x:
+        xsize = list(xe.size()).copy()
+        xsize[dim] = None
+        xsize[dim] = maxsize - xe.size(dim)
+        _xe = xe
+        if xsize[dim] > 0:
+            _xe = torch.cat([xe, torch.ones(xsize, device=xe.device, dtype=xe.dtype) * value], dim)
+        _x.append(_xe)
+    return _x
+
 # endregion
 
 
@@ -406,7 +429,6 @@ def pad_clip(tensor, padidx=0):
                  + [slice(None, i+1, None)]
         ret = tensor[tuple(slices)]
         return ret
-
 
 
 def inf_batches(dataloader, with_info=True):

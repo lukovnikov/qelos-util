@@ -3,6 +3,29 @@ import qelos as q
 import torch
 
 
+class TestStackPadded(TestCase):
+    def test_it(self):
+        x = torch.rand(2)
+        y = torch.rand(4)
+        z = q.pad_tensors([x, y], 0)
+        z = torch.stack(z, 0)
+        print(x)
+        print(y)
+        print(z)
+        self.assertTrue(torch.allclose(x, z[0, :2]))
+        self.assertTrue(torch.allclose(y, z[1, :4]))
+        self.assertTrue(torch.allclose(z[0, 2:], torch.zeros_like(z[0, 2:])))
+
+    def test_multiple_dims(self):
+        x = torch.randn(3, 5, 4)
+        y = torch.randn(3, 4, 2)
+
+        z = q.pad_tensors([x, y], (1, 2))
+        z = torch.cat(z, 0)
+        print(z)
+
+
+
 class TestBucketRandomSampler(TestCase):
     def test_indexes(self):
         bs = q.BucketedRandomBatchSampler(500, 11, 17)
