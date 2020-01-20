@@ -36,7 +36,7 @@ __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_u
            "BucketedRandomBatchSampler", "padclip_collate_fn", "pad_clip",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
            "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of", "split_dataset",
-           "percentagebar", "pad_tensors",
+           "percentagebar", "pad_tensors", "unstack",
            "get_init_args", "save_run", "load_run", "init_save_run", "save_dataset", "load_dataset"]
 
 
@@ -275,6 +275,14 @@ def intercat(tensors, axis=-1):
     if axis != -1 and axis != tensors[0].dim()-1:
         t = t.transpose(axis, -1)
     return t
+
+
+def unstack(x, dim=0):
+    xs = x.split(1, dim)
+    sel = [slice(None)] * x.dim()
+    sel[dim] = 0
+    ys = [xe[sel] for xe in xs]
+    return ys
 
 
 def masked_mean(x, dim=None, mask=None, keepdim=False):
