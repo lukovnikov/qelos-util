@@ -46,7 +46,7 @@ def run_hpo_cv(runf, ranges, numcvfolds=6, path=None, **kw):
             kw_ = kw.copy()
             kw_.update(spec)
             score = runf(testfold=i, numcvfolds=numcvfolds, **kw_)
-            tt.msg(f"SCORE: {score} FOR FOLD {i}/{numcvfolds}")
+            tt.msg(f"SCORE: {score} FOR FOLD {i+1}/{numcvfolds}")
             scores.append(score)
         score = sum(scores)/len(scores)
         tt.msg(f"AVERAGE SCORE OVER FOLDS: {score}")
