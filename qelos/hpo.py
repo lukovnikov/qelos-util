@@ -41,6 +41,7 @@ def run_hpo_cv(runf, ranges, numcvfolds=6, path=None, **kw):
 
     for spec in specs:
         scores = []
+        tt.msg(f"Training for specs: {spec}")
         for i in range(numcvfolds):
             kw_ = kw.copy()
             kw_.update(spec)
