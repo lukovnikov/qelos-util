@@ -36,7 +36,7 @@ __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_u
            "BucketedRandomBatchSampler", "padclip_collate_fn", "pad_clip",
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
            "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of", "split_dataset",
-           "percentagebar", "pad_tensors", "unstack",
+           "percentagebar", "pad_tensors", "unstack", "EnvelopeSchedule",
            "get_init_args", "save_run", "load_run", "init_save_run", "save_dataset", "load_dataset"]
 
 
@@ -251,6 +251,45 @@ class hyperparam(object):
     @v.setter
     def v(self, value):
         self._v = value
+
+
+class EnvelopeSchedule(object):
+    def __init__(self, hp:hyperparam, spec:str, numsteps:int=None, **kw):
+        """
+        :param spec: must be like "0:1.,0.1:0.". First element in pair: which percentage of steps. Second value: what value.
+        For example, with "0:1,0.5:0" spec with 20 steps, the hp will linearly decrease in value from 1. as initial value, going to 0 at step 10
+        :param kw:
+        """
+        super(EnvelopeSchedule, self).__init__(**kw)
+        self.hp = hp
+        self.specstr = spec
+        self.numsteps = numsteps
+        self.spec = self.parse_spec(spec)
+        self._step = 1
+
+    def parse_spec(self, spec:str):
+        pairs = spec.split(",")
+        pairs = [[float(x) for x in pair.split(":")] for pair in pairs]
+        pairs = dict(pairs)
+        if 0 not in pairs:
+            pairs[0] = self.hp._v
+        else:
+            self.hp._v = pairs[0]
+        return pairs
+
+    def step(self):
+        _step = self._step / self.numsteps
+        # print(_step)
+        spec_keys = sorted(self.spec.keys())
+        if _step >= max(spec_keys):
+            self.hp._v = self.spec[max(spec_keys)]
+        for i in range(1, len(spec_keys)):
+            if spec_keys[i-1] <= _step and spec_keys[i] > _step:
+                # linearly interpolate
+                v = (_step - spec_keys[i-1]) * self.spec[spec_keys[i]] + (spec_keys[i] - _step) * self.spec[spec_keys[i-1]]
+                v = v / (spec_keys[i] - spec_keys[i-1])
+                self.hp._v = v
+        self._step += 1
 
 
 def v(x):

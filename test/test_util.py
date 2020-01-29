@@ -3,6 +3,16 @@ import qelos as q
 import torch
 
 
+class TestEnvelopSchedule(TestCase):
+    def test_it(self):
+        hp = q.hyperparam(0)
+        s = q.EnvelopeSchedule(hp, "0:1,0.5:0,1:1")
+        s.numsteps = 20
+        for i in range(22):
+            print(hp._v)
+            s.step()
+
+
 class TestStackPadded(TestCase):
     def test_it(self):
         x = torch.rand(2)
