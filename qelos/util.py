@@ -264,10 +264,15 @@ class EnvelopeSchedule(object):
         self.hp = hp
         self.specstr = spec
         self.numsteps = numsteps
+        self.mult = 1.
         self.spec = self.parse_spec(spec)
         self._step = 1
 
     def parse_spec(self, spec:str):
+        spec = spec.split("*")
+        if len(spec) > 1:
+            spec, mult = spec
+            self.mult = float(mult)
         pairs = spec.split(",")
         pairs = [[float(x) for x in pair.split(":")] for pair in pairs]
         pairs = dict(pairs)
@@ -282,13 +287,13 @@ class EnvelopeSchedule(object):
         # print(_step)
         spec_keys = sorted(self.spec.keys())
         if _step >= max(spec_keys):
-            self.hp._v = self.spec[max(spec_keys)]
+            self.hp._v = self.spec[max(spec_keys)] * self.mult
         for i in range(1, len(spec_keys)):
             if spec_keys[i-1] <= _step and spec_keys[i] > _step:
                 # linearly interpolate
                 v = (_step - spec_keys[i-1]) * self.spec[spec_keys[i]] + (spec_keys[i] - _step) * self.spec[spec_keys[i-1]]
                 v = v / (spec_keys[i] - spec_keys[i-1])
-                self.hp._v = v
+                self.hp._v = v * self.mult
         self._step += 1
 
 

@@ -6,10 +6,10 @@ import torch
 class TestEnvelopSchedule(TestCase):
     def test_it(self):
         hp = q.hyperparam(0)
-        s = q.EnvelopeSchedule(hp, "0:1,0.5:0,1:1")
-        s.numsteps = 20
-        for i in range(22):
-            print(hp._v)
+        s = q.EnvelopeSchedule(hp, "0:0,0.15:0,0.3:1*0.1")
+        s.numsteps = 70
+        for i in range(60):
+            print(i, hp._v)
             s.step()
 
 
