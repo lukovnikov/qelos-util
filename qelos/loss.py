@@ -287,7 +287,7 @@ class SmoothedCELoss(torch.nn.Module):
         prob_mask_weights = lsv / prob_mask.sum(-1, keepdim=True)
         _gold = torch.ones_like(probs) * prob_mask_weights * prob_mask
         _gold.scatter_(-1, gold.unsqueeze(-1), (1 - lsv) + prob_mask_weights)   # (batsize, ..., vocsize) probs
-        assert((_gold.sum(-1) - torch.ones_like(gold).float()).norm().cpu().item() < 1e-5)
+        assert(torch.allclose(_gold.sum(-1), torch.ones_like(gold).float()) is True)
 
         logprobs = self.sm(probs) if self.mode == "logits" else (probs if self.mode == "logprobs" else torch.log(probs))
         kl_divs = self.kl(logprobs, _gold.detach())
