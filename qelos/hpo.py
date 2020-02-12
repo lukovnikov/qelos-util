@@ -9,7 +9,7 @@ import torch
 import qelos as q
 
 
-__all__ = ["run_hpo_cv"]
+__all__ = ["run_hpo_cv", "run_experiments"]
 
 import ujson
 
@@ -17,6 +17,30 @@ import ujson
 def run(**kw):
     print(kw)
     return random.random()
+
+
+def run_experiments(runf, ranges, path=None, **kw):
+    tt = q.ticktock("HPO")
+    tt.msg("running experiments")
+    tt.msg(ujson.dumps(ranges, indent=4))
+    _ranges = [[(k, v) for v in ranges[k]] for k in ranges]
+    all_combos = list(product(*_ranges))
+    random.shuffle(all_combos)
+    tt.msg(f"Number of possible combinations: {len(all_combos)}")
+    specs = [dict(x) for x in all_combos]
+
+    results = []
+
+    for spec in specs:
+        tt.msg(f"Training for specs: {spec}")
+        kw_ = kw.copy()
+        kw_.update(spec)
+        result = runf(**kw_)
+        results.append(result)
+        if path is not None:
+            with open(path, "w") as f:
+                ujson.dump(results, f, indent=4)
+    return results
 
 
 def run_hpo_cv(runf, ranges, numcvfolds=6, path=None, **kw):
@@ -30,7 +54,7 @@ def run_hpo_cv(runf, ranges, numcvfolds=6, path=None, **kw):
     :return:
     """
     tt = q.ticktock("HPO")
-    tt.msg(str(ranges))
+    tt.msg(ujson.dumps(ranges, indent=4))
     _ranges = [[(k, v) for v in ranges[k]] for k in ranges]
     all_combos = list(product(*_ranges))
     random.shuffle(all_combos)
