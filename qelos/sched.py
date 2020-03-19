@@ -116,7 +116,8 @@ class Linear(SchedulePiece):
         self._offset = start
 
     def _step(self):
-        return self.i * self._slope + self._offset
+        i = self.i + .5
+        return i * self._slope + self._offset
 
 
 class Lambda(SchedulePiece):
@@ -154,7 +155,8 @@ def try_cosine():
 
 def try_cat():
     import matplotlib.pyplot as plt
-    sched = (Linear(steps=10) >> Cosine(steps=90) >> Cosine(steps=100)) * Linear(steps=200, start=1, end=0) * 2 + 1
+    sched = (Linear(steps=10) >> Cosine(steps=90) >> Cosine(steps=100)) * Linear(steps=200, start=1, end=0)
+    # sched = Linear(steps=5)
     x = list(range(sched.num_steps))
     y = [sched.step() for _ in x]
     plt.plot(x, y)
