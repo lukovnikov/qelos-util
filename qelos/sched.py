@@ -101,7 +101,7 @@ class Constant(SchedulePiece):
         super(Constant, self).__init__(**kw)
         self.val = val
 
-    def step(self):
+    def _step(self):
         return self.val
 
 
