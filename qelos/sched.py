@@ -18,6 +18,9 @@ class SchedulePiece(object):
         self.num_steps = steps
         self.i = 0
 
+    def get_lr_sched(self, optimizer):
+        return LRSchedule(optimizer, self)
+
     def __rshift__(self, other):
         if isinstance(other, (int, float)):
             other = Constant(other, steps=np.infty)
