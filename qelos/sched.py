@@ -154,7 +154,7 @@ def try_cosine():
 
 def try_cat():
     import matplotlib.pyplot as plt
-    sched = (Linear(steps=10) >> Cosine(steps=90) >> Cosine(steps=100)) * Linear(steps=200, start=1, end=0)
+    sched = (Linear(steps=10) >> Cosine(steps=90) >> Cosine(steps=100)) * Linear(steps=200, start=1, end=0) * 2 + 1
     x = list(range(sched.num_steps))
     y = [sched.step() for _ in x]
     plt.plot(x, y)
