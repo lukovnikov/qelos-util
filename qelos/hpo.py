@@ -43,7 +43,7 @@ def run_experiments(runf, ranges, path=None, decision_field="valid_acc", stop_va
         if decision_field in result:
             decision_field_value = float(result[decision_field])
         if stop_value is not None:
-            assert(len(stop_value > 2) and stop_value[0] in "<>")
+            assert(len(stop_value) > 2 and stop_value[0] in "<>")
             less_or_greater = stop_value[0]
             less_or_greater = 1 if less_or_greater == ">" else -1
             value = float(stop_value[1:])
