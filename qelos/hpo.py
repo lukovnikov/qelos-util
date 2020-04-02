@@ -4,6 +4,7 @@ import random
 import shutil
 from collections import OrderedDict
 from itertools import product
+from typing import Callable
 
 import torch
 import qelos as q
@@ -20,9 +21,18 @@ def run(**kw):
 
 
 def run_experiments(runf, ranges, path=None,
-                    decision_field="valid_acc",
-                    stop_value:str=None,
+                    pmtf:Callable=None,
                     **kw):
+    """
+
+    :param runf:
+    :param ranges:
+    :param path:
+    :param pmtf:        PreMature Stopping Function. Receives outputs from runf. Must return bool.
+                        If returns True, current set of experiments is terminated.
+    :param kw:
+    :return:
+    """
     tt = q.ticktock("HPO")
     tt.msg("running experiments")
     tt.msg(ujson.dumps(ranges, indent=4))
@@ -35,30 +45,18 @@ def run_experiments(runf, ranges, path=None,
     results = []
 
     for spec in specs:
-        do_stop = False
         tt.msg(f"Training for specs: {spec}")
         kw_ = kw.copy()
         kw_.update(spec)
         result = runf(**kw_)
-
-        decision_field_value = None
-        if decision_field in result:
-            decision_field_value = float(result[decision_field])
-        if stop_value is not None:
-            assert(len(stop_value) > 2 and stop_value[0] in "<>")
-            less_or_greater = stop_value[0]
-            less_or_greater = 1 if less_or_greater == ">" else -1
-            value = float(stop_value[1:])
-            if decision_field_value * less_or_greater > value * less_or_greater:
-                do_stop = True
-                tt.msg(f"\"{decision_field}\" reached a value of {decision_field_value:.3f}, which is {stop_value}.\n Stopping further experiments.")
 
         results.append(result)
         if path is not None:
             with open(path, "w") as f:
                 ujson.dump(results, f, indent=4)
 
-        if do_stop:
+        if pmtf is not None and pmtf(result):
+            tt.msg(f"Criterion satisfied.\nStopping further experiments.")
             break
     return results
 

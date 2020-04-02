@@ -1,3 +1,5 @@
+from typing import Callable
+
 import qelos as q
 import torch
 import numpy as np
@@ -589,24 +591,16 @@ class CosineLRwithWarmup(torch.optim.lr_scheduler._LRScheduler):
 
 
 class PrematureStopper(object):
-    def __init__(self, losswrap:LossWrapper, crit:str, **kw):
+    def __init__(self, f:Callable, **kw):
         super(PrematureStopper, self).__init__(**kw)
         self.tt = q.ticktock("PrematureStopper")
-        self.losswrap = losswrap
-        self.crit = crit
-        assert(len(crit) > 2 and crit[0] in "<>")
-        less_or_greater = crit[0]
-        self.crit_less_or_greater = 1 if less_or_greater == ">" else -1
-        self.crit_value = float(crit[1:])
-
+        self.f = f
         self.dostop = False
 
     def on_epoch_end(self):
-        x = self.losswrap.get_epoch_error()
-
-        if x * self.crit_less_or_greater > self.crit_value * self.crit_less_or_greater:
+        if self.f():
             self.dostop = True
-            self.tt.msg(f"Criterion reached a value of {x:.3f}, which is {self.crit}.\n Stopping this run prematurely.")
+            self.tt.msg(f"\nCriterion satisfied.\nStopping this run prematurely.")
 
     def check_stop(self):
         return self.dostop
