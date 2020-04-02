@@ -604,7 +604,7 @@ class PrematureStopper(object):
     def on_epoch_end(self):
         x = self.losswrap.get_epoch_error()
 
-        if x * self.crit_less_or_greater > self.crit_value * self.less_or_greater:
+        if x * self.crit_less_or_greater > self.crit_value * self.crit_less_or_greater:
             self.dostop = True
             self.tt.msg(f"Criterion reached a value of {x:.3f}, which is {self.crit}.\n Stopping this run prematurely.")
 
