@@ -608,20 +608,21 @@ class PrematureStopper(object):
 
 class EarlyStopper(object):
     def __init__(self, validacc:LossWrapper, patience=1, margin=0., less_is_better=None, more_is_better=None,
-                 initpatience=30, **kw):
+                 min_epochs=30, **kw):
         super(EarlyStopper, self).__init__(**kw)
         if less_is_better is None and more_is_better is None:
             print("Must specify whether less or more is better.")
         assert(less_is_better is None or more_is_better is None)
         self.validacc = validacc
         self.patience = patience
-        self.initpatience = initpatience
+        self.min_epochs = min_epochs
         self.margin = margin
         if less_is_better is None:
             less_is_better = not more_is_better
         self.multiplier = -1. if less_is_better else 1.
         self.max_x = np.infty * (-self.multiplier)
-        self.patience_counter = self.initpatience
+        self.patience_counter = self.patience
+        self.epoch_counter = 0
         self.dostop = False
 
     def on_epoch_end(self):
@@ -631,7 +632,8 @@ class EarlyStopper(object):
             self.patience_counter = self.patience  # reset patience counter
         else:
             self.patience_counter -= 1
-        if self.patience_counter <= 0:
+        self.epoch_counter += 1
+        if self.patience_counter <= 0 and self.epoch_counter >= self.min_epochs:
             self.dostop = True
 
     def check_stop(self):
