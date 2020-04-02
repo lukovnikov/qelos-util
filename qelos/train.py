@@ -10,7 +10,7 @@ from functools import partial
 
 __all__ = ["batch_reset", "epoch_reset", "LossWrapper", "BestSaver", "no_gold", "pp_epoch_losses",
            "train_batch", "train_epoch", "test_epoch", "run_training", "CosineLRwithWarmup", "eval_loop",
-           "PrematureStopper"]
+           "PrematureStopper", "EarlyStopper"]
 
 
 def batch_reset(module):        # performs all resetting operations on module before using it in the next batch
@@ -601,6 +601,31 @@ class PrematureStopper(object):
         if self.f():
             self.dostop = True
             self.tt.msg(f"\nCriterion satisfied.\nStopping this run prematurely.")
+
+    def check_stop(self):
+        return self.dostop
+
+
+class EarlyStopper(object):
+    def __init__(self, validacc:LossWrapper, patience=1, margin=0., less_is_better=True, **kw):
+        super(EarlyStopper, self).__init__(**kw)
+        self.validacc = validacc
+        self.patience = patience
+        self.margin = margin
+        self.greater_is_better = 1. if less_is_better else -1.
+        self.max_x = 0
+        self.patience_counter = self.patience
+        self.dostop = False
+
+    def on_epoch_end(self):
+        x = self.validacc.get_epoch_error()
+        if x * self.greater_is_better > self.max_x * self.greater_is_better + self.margin * self.greater_is_better:
+            self.max_x = x
+            self.patience_counter = self.patience  # reset patience counter
+        else:
+            self.patience_counter -= 1
+        if self.patience_counter <= 0:
+            self.dostop = True
 
     def check_stop(self):
         return self.dostop
