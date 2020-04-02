@@ -7,7 +7,8 @@ from functools import partial
 
 
 __all__ = ["batch_reset", "epoch_reset", "LossWrapper", "BestSaver", "no_gold", "pp_epoch_losses",
-           "train_batch", "train_epoch", "test_epoch", "run_training", "CosineLRwithWarmup", "eval_loop"]
+           "train_batch", "train_epoch", "test_epoch", "run_training", "CosineLRwithWarmup", "eval_loop",
+           "PrematureStopper"]
 
 
 def batch_reset(module):        # performs all resetting operations on module before using it in the next batch
@@ -585,3 +586,27 @@ class CosineLRwithWarmup(torch.optim.lr_scheduler._LRScheduler):
                                             / self.cyc_len))) / 2
                    for base_lr in self.base_lrs]
         return ret
+
+
+class PrematureStopper(object):
+    def __init__(self, losswrap:LossWrapper, crit:str, **kw):
+        super(PrematureStopper, self).__init__(**kw)
+        self.tt = q.ticktock("PrematureStopper")
+        self.losswrap = losswrap
+        self.crit = crit
+        assert(len(crit) > 2 and crit[0] in "<>")
+        less_or_greater = crit[0]
+        self.crit_less_or_greater = 1 if less_or_greater == ">" else -1
+        self.crit_value = float(crit[1:])
+
+        self.dostop = False
+
+    def on_epoch_end(self):
+        x = self.losswrap.get_epoch_error()
+
+        if x * self.crit_less_or_greater > self.crit_value * self.less_or_greater:
+            self.dostop = True
+            self.tt.msg(f"Criterion reached a value of {x:.3f}, which is {self.crit}.\n Stopping this run prematurely.")
+
+    def check_stop(self):
+        return self.dostop

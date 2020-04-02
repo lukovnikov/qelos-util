@@ -19,7 +19,9 @@ def run(**kw):
     return random.random()
 
 
-def run_experiments(runf, ranges, path=None, decision_field="valid_acc", stop_value:str=None,
+def run_experiments(runf, ranges, path=None,
+                    decision_field="valid_acc",
+                    stop_value:str=None,
                     **kw):
     tt = q.ticktock("HPO")
     tt.msg("running experiments")
