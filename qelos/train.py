@@ -617,8 +617,8 @@ class EarlyStopper(object):
         self.margin = margin
         if less_is_better is None:
             less_is_better = not more_is_better
-        self.multiplier = 1. if less_is_better else -1.
-        self.max_x = 0
+        self.multiplier = -1. if less_is_better else 1.
+        self.max_x = np.infty * (-self.multiplier)
         self.patience_counter = self.patience
         self.dostop = False
 
