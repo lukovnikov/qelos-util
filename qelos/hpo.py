@@ -45,19 +45,22 @@ def run_experiments(runf, ranges, path=None,
     results = []
 
     for spec in specs:
-        tt.msg(f"Training for specs: {spec}")
-        kw_ = kw.copy()
-        kw_.update(spec)
-        result = runf(**kw_)
+        try:
+            tt.msg(f"Training for specs: {spec}")
+            kw_ = kw.copy()
+            kw_.update(spec)
+            result = runf(**kw_)
 
-        results.append(result)
-        if path is not None:
-            with open(path, "w") as f:
-                ujson.dump(results, f, indent=4)
+            results.append(result)
+            if path is not None:
+                with open(path, "w") as f:
+                    ujson.dump(results, f, indent=4)
 
-        if pmtf is not None and pmtf(result):
-            tt.msg(f"Criterion satisfied.\nStopping further experiments.")
-            break
+            if pmtf is not None and pmtf(result):
+                tt.msg(f"Criterion satisfied.\nStopping further experiments.")
+                break
+        except RuntimeError as e:
+            print("Runtime error. Probably CUDA out of memory")
     return results
 
 
