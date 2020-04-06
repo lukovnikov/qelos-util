@@ -60,10 +60,11 @@ class SelectedLinearLoss(torch.nn.Module):
     """ Same as LinearLoss, but with selection from tuple of outputs from model (that specifies losses)
         To be used to output multiple losses from the model/ select one model output as training loss
     """
-    def __init__(self, which, reduction="mean", **kw):
+    def __init__(self, which, reduction="mean", infer_batsize=True, **kw):
         super(SelectedLinearLoss, self).__init__(**kw)
         self.which = which
         self.reduction = reduction
+        self.infer_batsize = infer_batsize
 
     def forward(self, model_outs, gold, **kw):
         if q.issequence(model_outs) or isinstance(model_outs, dict):
@@ -72,13 +73,19 @@ class SelectedLinearLoss(torch.nn.Module):
             assert(self.which == 0)
             x = model_outs
 
+        batsize = None
         if self.reduction in ["elementwise_mean", "mean"]:
             ret = x.mean()
+            batsize = x.size(0)
         elif self.reduction == "sum":
             ret = x.sum()
+            batsize = x.size(0)
         else:
             ret = x
-        return ret
+        if self.infer_batsize is True:
+            return ret, batsize
+        else:
+            return ret
 
 
 def logsumexp(x, axis=-1):

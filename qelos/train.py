@@ -173,7 +173,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
 
     batch = (batch,) if not q.issequence(batch) else batch
     batch = q.recmap(batch, lambda x: x.to(device) if hasattr(x, "to") else x)
-    numex = len(batch[0])
+    numex = len(batch[0]) if not hasattr(batch[0], "batch_size") else batch[0].batch_size
 
     if q.no_gold(losses):
         batch_in = batch
