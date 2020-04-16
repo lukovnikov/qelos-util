@@ -607,8 +607,19 @@ class PrematureStopper(object):
 
 
 class EarlyStopper(object):
-    def __init__(self, validacc:LossWrapper, patience=1, margin=0., less_is_better=None, more_is_better=None,
+    def __init__(self, validacc:LossWrapper, patience=1, margin=0.,
+                 less_is_better=None, more_is_better=None, remember_f=None,
                  min_epochs=30, **kw):
+        """
+        :param validacc: validation metric to monitor
+        :param patience: patience
+        :param margin: margin
+        :param less_is_better:
+        :param more_is_better:
+        :param remember_f: function that returns what to remember if new valid metric is better than best so far
+        :param min_epochs:
+        :param kw:
+        """
         super(EarlyStopper, self).__init__(**kw)
         if less_is_better is None and more_is_better is None:
             print("Must specify whether less or more is better.")
@@ -624,12 +635,16 @@ class EarlyStopper(object):
         self.patience_counter = self.patience
         self.epoch_counter = 0
         self.dostop = False
+        self.remember_f = remember_f
+        self.remembered = None
 
     def on_epoch_end(self):
         x = self.validacc.get_epoch_error()
         if x * self.multiplier > self.max_x * self.multiplier + self.margin * self.multiplier:
             self.max_x = x
             self.patience_counter = self.patience  # reset patience counter
+            if self.remember_f is not None:
+                self.remembered = self.remember_f()
         else:
             self.patience_counter -= 1
         self.epoch_counter += 1
