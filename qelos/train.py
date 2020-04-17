@@ -201,7 +201,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
 
     if isinstance(cost, torch.Tensor) and torch.isnan(cost).any():
         print("Cost is NaN!")
-        embed()
+        # embed()
 
     if do_backward and isinstance(cost, torch.Tensor):
         cost.backward()
@@ -215,7 +215,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
         print("Params with naningrad:")
         for name in naningrad:
             print(name)
-        embed()
+        # embed()
 
     [e() for e in on_before_optim_step]
     optim.step()
