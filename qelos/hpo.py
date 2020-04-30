@@ -2,6 +2,7 @@ import json
 import os
 import random
 import shutil
+import string
 from collections import OrderedDict
 from itertools import product
 from typing import Callable
@@ -20,7 +21,7 @@ def run(**kw):
     return random.random()
 
 
-def run_experiments(runf, ranges, path=None, check_config:Callable=None,
+def run_experiments(runf, ranges, path=None, path_prefix=None, check_config:Callable=None,
                     pmtf:Callable=None,
                     **kw):
     """
@@ -45,6 +46,12 @@ def run_experiments(runf, ranges, path=None, check_config:Callable=None,
     tt.msg(f"Number of possible combinations: {len(specs)}")
 
     results = []
+
+    if path is None:
+        rand = "".join(random.choice(string.ascii_letters) for i in range(6))
+        path = path_prefix + f".{rand}.xps"
+    else:
+        print("Warning: deprecated, use path_prefix instead.")
 
     for spec in specs:
         try:
