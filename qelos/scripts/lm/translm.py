@@ -199,7 +199,7 @@ class TransformerLMCell(torch.nn.Module):
 # endregion
 
 
-class PPLfromCE(q.LossWrapper):
+class PPLfromCE(q.MetricWrapper):
     def __init__(self, celosswrapper, **kw):
         super(PPLfromCE, self).__init__(celosswrapper.loss, **kw)
         self.celosswrapper = celosswrapper
@@ -269,10 +269,10 @@ def run(lr=2.5e-4,
         # return
     # return
 
-    loss = q.LossWrapper(q.CELoss(mode="logits"))
-    validloss = q.LossWrapper(q.CELoss(mode="logits"))
+    loss = q.MetricWrapper(q.CELoss(mode="logits"))
+    validloss = q.MetricWrapper(q.CELoss(mode="logits"))
     validlosses = [validloss, PPLfromCE(validloss)]
-    testloss = q.LossWrapper(q.CELoss(mode="logits"))
+    testloss = q.MetricWrapper(q.CELoss(mode="logits"))
     testlosses = [testloss, PPLfromCE(testloss)]
     for l in [loss] + validlosses + testlosses:   # put losses on right device
         l.loss.to(device)

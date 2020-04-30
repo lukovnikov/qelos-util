@@ -8,7 +8,7 @@ import math
 from functools import partial
 
 
-__all__ = ["batch_reset", "epoch_reset", "LossWrapper", "BestSaver", "no_gold", "pp_epoch_losses",
+__all__ = ["batch_reset", "epoch_reset", "MetricWrapper", "BestSaver", "no_gold", "pp_epoch_losses",
            "train_batch", "train_epoch", "test_epoch", "run_training", "CosineLRwithWarmup", "eval_loop",
            "PrematureStopper", "EarlyStopper"]
 
@@ -26,7 +26,7 @@ def epoch_reset(module):        # performs all resetting operations on module be
             modu.epoch_reset()
 
 
-class LossWrapper(object):
+class MetricWrapper(object):
     """ Wraps a normal loss with aggregating and other functionality """
 
     def __init__(self, loss, name=None, mode="mean", **kw):
@@ -36,7 +36,7 @@ class LossWrapper(object):
         :param mode:    "mean" or "sum"
         :param kw:
         """
-        super(LossWrapper, self).__init__()
+        super(MetricWrapper, self).__init__()
         self.loss, self.aggmode = loss, mode
         self.name = name if name is not None else loss.__class__.__name__
 
@@ -103,7 +103,7 @@ def no_gold(losses):
     return all_linear
 
 
-def pp_epoch_losses(*losses:LossWrapper):
+def pp_epoch_losses(*losses:MetricWrapper):
     values = [loss.get_epoch_error() for loss in losses]
     ret = " :: ".join("{:.4f}".format(value) for value in values)
     return ret
@@ -400,8 +400,8 @@ def example_usage_basic():
     # 3. define losses and wrap them
     loss = torch.nn.CrossEntropyLoss(reduction="mean")
     loss2 = torch.nn.CrossEntropyLoss(reduction="sum")
-    loss = q.LossWrapper(loss)
-    loss2 = q.LossWrapper(loss2)
+    loss = q.MetricWrapper(loss)
+    loss2 = q.MetricWrapper(loss2)
     # print(y.size(), y_pred.size())
     l = loss(y_pred, y)
     print(l)
@@ -436,8 +436,8 @@ def example_usage_full():
     # 3. define losses and wrap them
     loss = torch.nn.CrossEntropyLoss(reduction="mean")
     loss2 = torch.nn.CrossEntropyLoss(reduction="sum")
-    loss = q.LossWrapper(loss)
-    loss2 = q.LossWrapper(loss2)
+    loss = q.MetricWrapper(loss)
+    loss2 = q.MetricWrapper(loss2)
 
     # 4. define optim
     optim = torch.optim.SGD(model.parameters(), lr=1.0)
@@ -495,9 +495,9 @@ def example_usage_full_with_penalty_and_hyperparam():
     loss2 = torch.nn.CrossEntropyLoss(reduction="sum")
     penweight = q.hyperparam(1.)
     pen = q.PenaltyGetter(model, "get_penalty", factor=penweight)
-    loss = q.LossWrapper(loss)
-    loss2 = q.LossWrapper(loss2)
-    pen = q.LossWrapper(pen)
+    loss = q.MetricWrapper(loss)
+    loss2 = q.MetricWrapper(loss2)
+    pen = q.MetricWrapper(pen)
 
     # 4. define optim
     optim = torch.optim.SGD(model.parameters(), lr=1.)
@@ -610,7 +610,7 @@ class PrematureStopper(object):
 
 
 class EarlyStopper(object):
-    def __init__(self, validacc:LossWrapper, patience=1, margin=0.,
+    def __init__(self, validacc:MetricWrapper, patience=1, margin=0.,
                  less_is_better=None, more_is_better=None, remember_f=None,
                  min_epochs=30, **kw):
         """

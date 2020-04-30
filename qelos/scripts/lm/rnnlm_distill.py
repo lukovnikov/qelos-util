@@ -165,7 +165,7 @@ class RNNLayer_LM(torch.nn.Module):
         return out
 
 
-class PPLfromCE(q.LossWrapper):
+class PPLfromCE(q.MetricWrapper):
     def __init__(self, celosswrapper, **kw):
         super(PPLfromCE, self).__init__(celosswrapper.loss, **kw)
         self.celosswrapper = celosswrapper
@@ -257,10 +257,10 @@ def run(lr=20.,
     print("{} batches in train".format(len(train_batches)))
 
     # region base training
-    loss = q.LossWrapper(q.CELoss(mode="logits"))
-    validloss = q.LossWrapper(q.CELoss(mode="logits"))
+    loss = q.MetricWrapper(q.CELoss(mode="logits"))
+    validloss = q.MetricWrapper(q.CELoss(mode="logits"))
     validlosses = [validloss, PPLfromCE(validloss)]
-    testloss = q.LossWrapper(q.CELoss(mode="logits"))
+    testloss = q.MetricWrapper(q.CELoss(mode="logits"))
     testlosses = [testloss, PPLfromCE(testloss)]
 
     for l in [loss] + validlosses + testlosses:   # put losses on right device
@@ -315,10 +315,10 @@ def run(lr=20.,
     dims = [embdim] + ([encdim] * numlayers)
     ms = RNNLayer_LM(*dims, worddic=D, dropout=dropout, tieweights=tieweights).to(device)
 
-    loss = q.LossWrapper(q.DistillLoss(temperature=2.))
-    validloss = q.LossWrapper(q.CELoss(mode="logits"))
+    loss = q.MetricWrapper(q.DistillLoss(temperature=2.))
+    validloss = q.MetricWrapper(q.CELoss(mode="logits"))
     validlosses = [validloss, PPLfromCE(validloss)]
-    testloss = q.LossWrapper(q.CELoss(mode="logits"))
+    testloss = q.MetricWrapper(q.CELoss(mode="logits"))
     testlosses = [testloss, PPLfromCE(testloss)]
 
     for l in [loss] + validlosses + testlosses:  # put losses on right device
