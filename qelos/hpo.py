@@ -20,7 +20,7 @@ def run(**kw):
     return random.random()
 
 
-def run_experiments(runf, ranges, path=None,
+def run_experiments(runf, ranges, path=None, check_config:Callable=None,
                     pmtf:Callable=None,
                     **kw):
     """
@@ -39,8 +39,10 @@ def run_experiments(runf, ranges, path=None,
     _ranges = [[(k, v) for v in ranges[k]] for k in ranges]
     all_combos = list(product(*_ranges))
     random.shuffle(all_combos)
-    tt.msg(f"Number of possible combinations: {len(all_combos)}")
     specs = [dict(x) for x in all_combos]
+    if check_config is not None:
+        specs = [spec for spec in specs if check_config(spec)]
+    tt.msg(f"Number of possible combinations: {len(specs)}")
 
     results = []
 
