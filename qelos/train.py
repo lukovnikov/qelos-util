@@ -641,6 +641,9 @@ class EarlyStopper(object):
         self.remember_f = remember_f
         self.remembered = None
 
+    def get_remembered(self):
+        return self.remembered
+
     def on_epoch_end(self):
         x = self.validacc.get_epoch_error()
         if x * self.multiplier > self.max_x * self.multiplier + self.margin * self.multiplier:

@@ -26,7 +26,7 @@ def run_experiments(runf, ranges, path=None,
     """
 
     :param runf:
-    :param ranges:
+    :param ranges:      dict of hyperparam ranges
     :param path:
     :param pmtf:        PreMature Stopping Function. Receives outputs from runf. Must return bool.
                         If returns True, current set of experiments is terminated.
