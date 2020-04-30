@@ -298,6 +298,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
     """
     tt = q.ticktock(" -")
     model.eval()
+    model.to(device)
     q.epoch_reset(model)
     [e() for e in on_start]
     with torch.no_grad():
