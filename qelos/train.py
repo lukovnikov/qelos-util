@@ -612,7 +612,7 @@ class PrematureStopper(object):
 class EarlyStopper(object):
     def __init__(self, validacc:MetricWrapper, patience=1, margin=0.,
                  less_is_better=None, more_is_better=None, remember_f=None,
-                 min_epochs=30, **kw):
+                 min_epochs=None, **kw):
         """
         :param validacc: validation metric to monitor
         :param patience: patience
@@ -629,7 +629,7 @@ class EarlyStopper(object):
         assert(less_is_better is None or more_is_better is None)
         self.validacc = validacc
         self.patience = patience
-        self.min_epochs = min_epochs
+        self.min_epochs = min_epochs if min_epochs is not None else patience
         self.margin = margin
         if less_is_better is None:
             less_is_better = not more_is_better
