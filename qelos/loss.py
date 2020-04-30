@@ -63,6 +63,7 @@ class SelectedLinearLoss(torch.nn.Module):
     def __init__(self, which, reduction="mean", infer_batsize=True, **kw):
         super(SelectedLinearLoss, self).__init__(**kw)
         self.which = which
+        self.name = which
         self.reduction = reduction
         self.infer_batsize = infer_batsize
 
