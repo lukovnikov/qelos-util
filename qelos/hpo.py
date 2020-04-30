@@ -61,7 +61,8 @@ def run_experiments(runf, ranges, path=None, path_prefix=None, check_config:Call
             try:
                 result = runf(**kw_)
             except Exception as e:
-                result = {"type": "EXCEPTION", "exception": str(e)}
+                result = kw_
+                result.update({"type": "EXCEPTION", "exception": str(e)})
 
             results.append(result)
             if path is not None:
