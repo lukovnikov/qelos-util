@@ -13,3 +13,4 @@ from qelos.allen import *
 from qelos.optim import *
 from qelos.hpo import *
 import qelos.sched as sched
+from qelos.analyzer import analyze
