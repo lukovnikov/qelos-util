@@ -85,7 +85,8 @@ def analyze(p="",
         groupbys = [col for col in groupbys if col != by]
         ret = _df.groupby(by=groupbys, as_index=False)
         return ret
-    embed()
+
+    # embed()
 
 
 if __name__ == '__main__':
