@@ -3,11 +3,13 @@ from typing import List, Callable, Union
 import fire
 from IPython import embed
 import ujson as json
+from fnmatch import fnmatch
 
+from traitlets.config import get_config
 
 SEED_FIELD = "seed"
 NUMSEEDS_FIELD = "numseeds"
-OUTCOME_FIELDS = "train_acc,valid_acc,test_acc,elem_train_acc,elem_valid_acc,elem_test_acc"
+OUTCOME_FIELDS = "*_acc"
 
 def analyze(p="",
             seed_field=SEED_FIELD,
@@ -17,6 +19,10 @@ def analyze(p="",
     import numpy as np
     import pandas as pd
     outcome_fields = set(outcome_fields.split(","))
+
+    def is_outcome_field(_fieldname):
+        return any([fnmatch(outcome_field_pattern, _fieldname) for outcome_field_pattern in outcome_fields])
+
     print(f"Loading {p}")
     with open(p) as f:
         data = json.load(f)
@@ -67,12 +73,9 @@ def analyze(p="",
         if c in df.columns:
             del df[c]
     # average over seeds
-    if "seed" in df.columns:
-        others = [item for item in df.columns if item != "seed"]
+    if seed_field in df.columns:
+        others = [item for item in df.columns if item != seed_field]
         df.groupby(by=others).mean()
-
-    def is_acc_col(_name:str):
-        return _name.endswith("acc")
 
     def group_by(_df:pd.DataFrame, by:str, avg_cols:Union[List[str], Callable]):
         if by not in _df.columns:
@@ -86,7 +89,9 @@ def analyze(p="",
         ret = _df.groupby(by=groupbys, as_index=False)
         return ret
 
-    embed()
+    c = get_config()
+    c.InteractiveShellEmbed.colors = "Linux"
+    embed(config=c)
 
 
 if __name__ == '__main__':
