@@ -72,10 +72,11 @@ def analyze(p="",
     for c in doesntmatter:
         if c in df.columns:
             del df[c]
+
     # average over seeds
     if seed_field in df.columns:
         others = [item for item in df.columns if item != seed_field]
-        df.groupby(by=others).mean()
+        df = df.groupby(by=others, as_index=False).mean()
 
     def group_by(_df:pd.DataFrame, by:str, avg_cols:Union[List[str], Callable]):
         if by not in _df.columns:
