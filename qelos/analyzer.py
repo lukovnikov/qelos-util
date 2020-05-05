@@ -9,7 +9,7 @@ from traitlets.config import get_config
 
 SEED_FIELD = "seed"
 NUMSEEDS_FIELD = "numseeds"
-OUTCOME_FIELDS = "*_acc"
+OUTCOME_FIELDS = "*_acc,*_loss"
 
 def analyze(p="",
             seed_field=SEED_FIELD,
@@ -21,7 +21,7 @@ def analyze(p="",
     outcome_fields = set(outcome_fields.split(","))
 
     def is_outcome_field(_fieldname):
-        return any([fnmatch(outcome_field_pattern, _fieldname) for outcome_field_pattern in outcome_fields])
+        return any([fnmatch(_fieldname, outcome_field_pattern) for outcome_field_pattern in outcome_fields])
 
     print(f"Loading {p}")
     with open(p) as f:
