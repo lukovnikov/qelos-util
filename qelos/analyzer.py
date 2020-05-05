@@ -75,8 +75,7 @@ def analyze(p="",
 
     # average over seeds
     if seed_field in df.columns:
-        others = [item for item in df.columns if item != seed_field]    # TODO: exclude outcome fields
-        others = [item for item in others if not is_outcome_field(item)]
+        others = [item for item in df.columns if item != seed_field and not is_outcome_field(item)]
         df = df.groupby(by=others, as_index=False).mean()
         # del df[seed_field]
 
