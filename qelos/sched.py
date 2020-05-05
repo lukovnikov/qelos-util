@@ -21,6 +21,9 @@ class SchedulePiece(object):
     def get_lr_sched(self, optimizer):
         return LRSchedule(optimizer, self)
 
+    def bind(self, optimizer):
+        pass        # TODO: implement this
+
     def __rshift__(self, other):
         if isinstance(other, (int, float)):
             other = Constant(other, steps=np.infty)
