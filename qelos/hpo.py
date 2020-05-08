@@ -73,7 +73,7 @@ def run_experiments(runf, ranges, path=None, path_prefix=None, check_config:Call
                 tt.msg(f"Criterion satisfied.\nStopping further experiments.")
                 break
         except RuntimeError as e:
-            print("Runtime error. Probably CUDA out of memory")
+            print("Runtime error. Probably CUDA out of memory.\n...")
     return results
 
 
