@@ -61,6 +61,8 @@ def run_experiments(runf, ranges, path=None, path_prefix=None, check_config:Call
             try:
                 result = runf(**kw_)
             except Exception as e:
+                print("EXCEPTION!")
+                print(e)
                 result = kw_
                 result.update({"type": "EXCEPTION", "exception": str(e)})
 
