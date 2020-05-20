@@ -149,7 +149,9 @@ def eval_loop(model, dataloader, device=torch.device("cpu")):
 
 def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
                 batch_number=-1, max_batches=0, current_epoch=0, max_epochs=0,
-                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(), do_backward=True):
+                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(),
+                do_backward=True,
+                gradient_accumulation_steps=1, gradient_accumulation_average=True):
     """
     Runs a single batch of SGD on provided batch and settings.
     :param batch:  batch to run on
@@ -192,12 +194,17 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
         trainlosses.extend(loss_val)
 
     cost = trainlosses[0]
+
     # penalties
     penalties = 0
     for loss_obj, trainloss in zip(losses, trainlosses):
         if isinstance(loss_obj.loss, q.loss.PenaltyGetter):
             penalties += trainloss
     cost = cost + penalties
+
+    # scale loss (used for grad acc)
+    _loss_scale = 1. if not gradient_accumulation_average else 1./gradient_accumulation_steps
+    cost = cost * _loss_scale
 
     if isinstance(cost, torch.Tensor) and torch.isnan(cost).any():
         print("Cost is NaN!")
@@ -219,9 +226,11 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
         # embed()
         raise Exception("NaN in grad!")
 
-    [e() for e in on_before_optim_step]
-    optim.step()
-    [e() for e in on_after_optim_step]
+    _do_optim_step = (batch_number+1) % gradient_accumulation_steps == 0
+    if _do_optim_step:
+        [e() for e in on_before_optim_step]
+        optim.step()
+        [e() for e in on_after_optim_step]
 
     ttmsg = "Ep. {}/{} - [{}/{}]: {}".format(
                 f"{{:>{len(str(max_epochs))}}}".format(current_epoch+1),
