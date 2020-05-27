@@ -170,7 +170,6 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
     :return:
     """
     [e() for e in on_start]
-    optim.zero_grad()
     model.train()
 
     batch = (batch,) if not q.issequence(batch) else batch
@@ -230,6 +229,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
     if _do_optim_step:
         [e() for e in on_before_optim_step]
         optim.step()
+        optim.zero_grad()
         [e() for e in on_after_optim_step]
 
     ttmsg = "Ep. {}/{} - [{}/{}]: {}".format(
@@ -272,6 +272,7 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
     [e() for e in on_start]
 
     q.epoch_reset(model)
+    optim.zero_grad()
 
     for i, _batch in enumerate(dataloader):
         ttmsg = _train_batch(batch=_batch, model=model, optim=optim, losses=losses, device=device,
