@@ -226,6 +226,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
         raise Exception("NaN in grad!")
 
     _do_optim_step = ((batch_number+1) % gradient_accumulation_steps) == 0
+    _do_optim_step = _do_optim_step or batch_number == max_batches  # force optim step at the end of epoch
     if _do_optim_step:
         [e() for e in on_before_optim_step]
         optim.step()
