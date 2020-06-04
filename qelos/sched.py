@@ -11,6 +11,18 @@ class LRSchedule(LambdaLR):
         self._schedule = schedule
 
 
+class HyperparamSchedule(object):
+    def __init__(self, hyperparam, schedule, **kw):
+        super(HyperparamSchedule, self).__init__(**kw)
+        self.hyperparam = hyperparam
+        self.schedule = schedule
+
+    def step(self):
+        value = self.schedule.step()
+        self.hyperparam._v = value
+        return value
+
+
 class SchedulePiece(object):
     def __init__(self, steps:int=None, **kw):
         super(SchedulePiece, self).__init__(**kw)
