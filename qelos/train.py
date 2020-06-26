@@ -657,6 +657,8 @@ class EarlyStopper(object):
         return self.remembered
 
     def on_epoch_end(self):
+        if self.patience < 0:
+            return
         x = self.validacc.get_epoch_error()
         if x * self.multiplier > self.max_x * self.multiplier + self.margin * self.multiplier:
             self.max_x = x
@@ -670,4 +672,6 @@ class EarlyStopper(object):
             self.dostop = True
 
     def check_stop(self):
+        if self.patience < 0:
+            return False
         return self.dostop
