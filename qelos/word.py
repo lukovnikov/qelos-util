@@ -29,6 +29,13 @@ class VectorLoader(object):
         return ret
 
     @classmethod
+    def load_glove_data(cls, name, p="../data/glove/", **kw):
+        print(os.path.dirname(__file__))
+        p = os.path.join(os.path.dirname(__file__), p, name)
+        W, D = WordEmb._load_path(p)
+        return W, D
+
+    @classmethod
     def transform_to_format(cls, path, outpath):
         tt = q.ticktock("word vector formatter")
         tt.tick("formatting word vectors")
@@ -196,7 +203,8 @@ class WordEmb(torch.nn.Embedding, VectorLoader):
         vocsizeD = max(D.values())+1
         assert(vocsizeD == _vocsize)
 
-        print("{}/{} selectD overlap to D".format(len(set(D.keys()) & set(selectD.keys())), len(selectD.keys())))
+        if selectD is not None:
+            print("{}/{} selectD overlap to D".format(len(set(D.keys()) & set(selectD.keys())), len(selectD.keys())))
 
         # rearrange according to newD
         if selectD is not None:
