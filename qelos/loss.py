@@ -12,7 +12,7 @@ EPS = 1e-6
 
 __all__ = ["PenaltyGetter", "Accuracy", "SeqAccuracy", "SeqElemAccuracy", "MacroBLEU", "nan2zero", "inf2zero",
            "SmoothedCELoss", "CELoss", "DistillLoss", "LinearLoss", "DiffSmoothedCELoss",
-           "SelectedLinearLoss"]
+           "SelectedLinearLoss", "DerivedLoss"]
 
 
 class PenaltyGetter(torch.nn.Module):
@@ -37,6 +37,16 @@ class PenaltyGetter(torch.nn.Module):
                     pass
                 penalty_value += pval
         return penalty_value * factor
+
+
+class DerivedLoss(torch.nn.Module):
+    def __init__(self, f, **kw):
+        super(DerivedLoss, self).__init__(**kw)
+        self.f = f
+
+    def forward(self, model_outs, gold, **kw):
+        x = self.f()
+        return x
 
 
 class LinearLoss(torch.nn.Module):
@@ -67,22 +77,26 @@ class SelectedLinearLoss(torch.nn.Module):
         self.reduction = reduction
         self.infer_batsize = infer_batsize
 
-    def forward(self, model_outs, gold, **kw):
+    def forward(self, model_outs, _, **kw):
         if q.issequence(model_outs) or isinstance(model_outs, dict):
             x = model_outs[self.which]
         else:
             assert(self.which == 0)
             x = model_outs
 
-        batsize = None
-        if self.reduction in ["elementwise_mean", "mean"]:
-            ret = x.mean()
-            batsize = x.size(0)
-        elif self.reduction == "sum":
-            ret = x.sum()
-            batsize = x.size(0)
+        if x.shape == (0,):     # empty list
+            ret = torch.tensor(0.).to(x.device)
+            batsize = 0
         else:
-            ret = x
+            batsize = None
+            if self.reduction in ["elementwise_mean", "mean"]:
+                ret = x.mean()
+                batsize = x.size(0)
+            elif self.reduction == "sum":
+                ret = x.sum()
+                batsize = x.size(0)
+            else:
+                ret = x
         if self.infer_batsize is True:
             return ret, batsize
         else:

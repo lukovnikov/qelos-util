@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Iterable
 
 import qelos as q
 import torch
@@ -10,7 +10,7 @@ from functools import partial
 
 __all__ = ["batch_reset", "epoch_reset", "MetricWrapper", "BestSaver", "no_gold", "pp_epoch_losses",
            "train_batch", "train_epoch", "test_epoch", "run_training", "CosineLRwithWarmup", "eval_loop",
-           "PrematureStopper", "EarlyStopper"]
+           "PrematureStopper", "EarlyStopper", "ComputedMetric"]
 
 
 def batch_reset(module):        # performs all resetting operations on module before using it in the next batch
@@ -46,6 +46,9 @@ class MetricWrapper(object):
         self.epoch_agg_values = []
         self.epoch_agg_sizes = []
 
+    def __q_v__(self):
+        return self.get_epoch_error()
+
     def get_epoch_error(self):
         """ returns the aggregated error for this epoch so far """
         if self.aggmode == "mean":
@@ -53,7 +56,7 @@ class MetricWrapper(object):
                 ret = 0.
             else:
                 total = sum(self.epoch_agg_sizes)
-                fractions = [x/total for x in self.epoch_agg_sizes]
+                fractions = [((x/total) if total > 0 else 0) for x in self.epoch_agg_sizes]
                 parts = [x * y for x, y in zip(self.epoch_agg_values, fractions)]
                 ret = sum(parts)
         else:
@@ -90,12 +93,32 @@ class MetricWrapper(object):
         self.epoch_agg_values = []
         self.epoch_agg_sizes = []
 
+    def to(self, device):
+        self.loss = self.loss.to(device)
+        return self
+
+
+class ComputedMetric(MetricWrapper):
+    def __init__(self, f, name=None, **kw):
+        super(ComputedMetric, self).__init__(None, name=name, **kw)
+        self.f = f
+
+    def __call__(self, *args, **kwargs):
+        pass
+
+    def get_epoch_error(self):
+        ret = self.f()
+        return ret
+
+    def to(self, device):
+        return self
+
 
 def no_gold(losses):
     all_linear = True
     some_linear = False
     for loss in losses:
-        if isinstance(loss.loss, (q.LinearLoss, q.SelectedLinearLoss)):
+        if isinstance(loss.loss, (q.LinearLoss, q.SelectedLinearLoss)) or loss.loss is None:
             some_linear = True
         else:
             all_linear = False
@@ -104,7 +127,7 @@ def no_gold(losses):
 
 
 def pp_epoch_losses(*losses:MetricWrapper):
-    values = [loss.get_epoch_error() for loss in losses]
+    values = [q.v(loss) for loss in losses]
     ret = " :: ".join("{:.4f}".format(value) for value in values)
     return ret
 
@@ -267,7 +290,7 @@ def train_epoch(model=None, dataloader=None, optim=None, losses=None, device=tor
     for loss in losses:
         loss.push_epoch_to_history(epoch=current_epoch-1)
         loss.reset_agg()
-        loss.loss.to(device)
+        loss.to(device)
 
     model.to(device)
 
@@ -659,7 +682,7 @@ class EarlyStopper(object):
     def on_epoch_end(self):
         if self.patience < 0:
             return
-        x = self.validacc.get_epoch_error()
+        x = q.v(self.validacc)      #.get_epoch_error()
         if x * self.multiplier > self.max_x * self.multiplier + self.margin * self.multiplier:
             self.max_x = x
             self.patience_counter = self.patience  # reset patience counter
