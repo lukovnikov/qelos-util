@@ -12,11 +12,9 @@ import torch
 import qelos as q
 
 
-__all__ = ["run_hpo_cv", "run_experiments"]
+__all__ = ["run_hpo_cv", "run_experiments", "run_experiments_optuna"]
 
 import ujson
-from hyperopt import hp, fmin
-import hyperopt
 
 import matplotlib as mpl
 from matplotlib import pyplot as plt
@@ -33,23 +31,26 @@ def test_optuna():
         x = trial.suggest_uniform("x", -5, 5)
         y = trial.suggest_uniform("y", -5, 5)
         if not(abs(x) > abs(y) or y < 0):
-            # raise optuna.TrialPruned()
-            raise Exception("invalid config")
+            raise optuna.TrialPruned()
+            # raise Exception("invalid config")
         return (abs(x) + abs(y)) ** 2
 
     study = optuna.create_study(direction="minimize")
-    study.optimize(obj, n_trials=1000, catch=(Exception,))
+    study.optimize(obj, n_trials=200, catch=(Exception,))
 
     print(study.best_params)
     print(study.best_value)
 
 
     plt.scatter([t.params["x"] for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE], [t.params["y"] for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
+    plt.scatter([t.params["x"] for t in study.trials], [t.params["y"] for t in study.trials])
     plt.show()
 
 
 
 def test_hyperopt():
+    from hyperopt import hp, fmin
+    import hyperopt
     from hyperopt.pyll.stochastic import sample
     ranges = {
         "dropout": hp.choice("dropout", [0., .1, .25, .5, .75]),
@@ -90,6 +91,8 @@ def run_experiments_optuna(runf, optout, ranges, path_prefix, check_config:Calla
     rand = "".join(random.choice(string.ascii_letters) for i in range(6))
     path = path_prefix + f".{rand}.xps"
 
+    results = []
+
     # convert ranges to optuna
     def obj(trial:optuna.Trial):
         spec = {}
@@ -102,16 +105,23 @@ def run_experiments_optuna(runf, optout, ranges, path_prefix, check_config:Calla
         tt.msg(f"Training for specs: {spec}")
         kw_ = kw.copy()
         kw_.update(spec)
+        hadexception = False
+        try:
+            result = runf(**kw_)
+        except Exception as e:
+            print("EXCEPTION!")
+            print(e)
+            result = kw_
+            result.update({"type": "EXCEPTION", "exception": str(e)})
+            hadexception = True
 
-        result = runf(**kw_)
-
-        for k, v in result.items():
-            trial.set_user_attr(k, v)
-
+        results.append(result)
         if path is not None:
             with open(path, "w") as f:
                 ujson.dump(results, f, indent=4)
 
+        if hadexception:
+            raise optuna.TrialPruned()
         return result[optout]
 
     study = optuna.create_study(direction="minimize" if minimize else "maximize")
