@@ -340,7 +340,7 @@ def test_epoch(model=None, dataloader=None, losses=None, device=torch.device("cp
         for loss_obj in losses:
             loss_obj.push_epoch_to_history()
             loss_obj.reset_agg()
-            loss_obj.loss.to(device)
+            loss_obj.to(device)
         for i, _batch in enumerate(dataloader):
             [e() for e in on_start_batch]
 
