@@ -44,6 +44,8 @@ def run_experiments(runf, ranges, path=None, path_prefix=None, check_config:Call
     if check_config is not None:
         specs = [spec for spec in specs if check_config(spec)]
     tt.msg(f"Number of possible combinations: {len(specs)}")
+    if len(specs) < 1:
+        raise Exception("No combination is possible!")
 
     results = []
 
@@ -63,6 +65,7 @@ def run_experiments(runf, ranges, path=None, path_prefix=None, check_config:Call
             except Exception as e:
                 print("EXCEPTION!")
                 print(e)
+                raise e
                 result = kw_
                 result.update({"type": "EXCEPTION", "exception": str(e)})
 
