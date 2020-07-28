@@ -37,9 +37,12 @@ def test_optuna():
         y = trial.suggest_discrete_uniform("y", -5, 6, 1)
         setting = f"{x}-{y}"
         if setting in uniq:
+            # return None
             raise optuna.TrialPruned()
         if not(abs(x) > abs(y) or y < 0):
-            raise optuna.TrialPruned()
+            pass
+            # return None
+            # raise optuna.TrialPruned()
             # raise Exception("invalid config")
         uniq.add(setting)
         return (abs(x) + abs(y)) ** 2
@@ -111,26 +114,113 @@ def test_hyperopt():
 
 
 def test_custom_genetic():
-    ranges = {"x": list(range(-3, 4)),
-              "y": list(range(-3, 4)),
-              "z": list(range(-3, 4)),
-              "a": list(range(-3, 4)),
-              "b": list(range(-3, 4)),
-              "c": list(range(-3, 4))}
+    ranges = {"x": list(range(-24, 25)),
+              "y": list(range(-24, 25))}
     def checkconfig(spec):
-        return spec["x"] + spec["y"] <= 0
+        _x, _y = spec["x"], spec["y"]
+        return _y <= 0 or (abs(_x) >= _y)
 
-    def run(x=0, y=0, z=0, a=0, b=0, c=0):
+    def run(x=0, y=0):
         if random.random() < 0.1:
             raise Exception("sum ting wong")
-        ret = (abs(x) + abs(y) + abs(z) + abs(a) + abs(b) + abs(c)) ** 2
-        return {"loss": ret}
+        ret = (abs(x) + abs(y)) ** 2
+        return {"loss": ret, "x": x, "y": y}
 
-    run_experiments_custom_genetic(run, "loss", ranges, None, checkconfig)
+    results = run_experiments_custom_genetic(run, "loss", ranges, None, checkconfig, maxtrials=50, no_duplicates=True)
+
+    x = [r["x"] for r in results]
+    y = [r["y"] for r in results]
+
+    heatmap, xedges, yedges = np.histogram2d(x, y, bins=100)
+    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+
+    plt.clf()
+    plt.imshow(heatmap.T, extent=extent, origin='lower')
+    plt.show()
+
+
+def test_random():
+    ranges = {"x": list(range(-24, 25)),
+              "y": list(range(-24, 25))}
+    def checkconfig(spec):
+        _x, _y = spec["x"], spec["y"]
+        return _y <= 0 or (abs(_x) >= _y)
+
+    def run(x=0, y=0):
+        if random.random() < 0.1:
+            raise Exception("sum ting wong")
+        ret = (abs(x) + abs(y)) ** 2
+        return {"loss": ret, "x": x, "y": y}
+
+    results = run_experiments_random(run, ranges, None, checkconfig, maxtrials=50)
+
+    x = [r["x"] for r in results]
+    y = [r["y"] for r in results]
+
+    heatmap, xedges, yedges = np.histogram2d(x, y, bins=100)
+    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+
+    plt.clf()
+    plt.imshow(heatmap.T, extent=extent, origin='lower')
+    plt.show()
+
+
+def run_experiments_random(runf, ranges, path_prefix, check_config:Callable, maxtrials=np.infty, **kw):
+    tt = q.ticktock("HPO")
+    tt.msg("(using custom evolutionary HPO)")
+    tt.msg("running experiments")
+    tt.msg(ujson.dumps(ranges, indent=4))
+    _ranges = [[(k, v) for v in ranges[k]] for k in ranges]
+    all_combos = list(product(*_ranges))
+    random.shuffle(all_combos)
+    specs = [dict(x) for x in all_combos]
+    specschema = sorted(specs[0].keys())
+    specs = {tuple([x[k] for k in specschema]) for x in specs}
+    if check_config is not None:
+        specs = {spec for spec in specs if check_config(dict(zip(specschema, spec)))}
+    tt.msg(f"Number of possible combinations: {len(specs)}")
+    specs = list(specs)
+
+
+    rand = "".join(random.choice(string.ascii_letters) for i in range(6))
+    path = path_prefix + f".{rand}.xps" if path_prefix is not None else None
+    f = None
+    if path is not None:
+        f = open(path, "w")
+
+    results = []
+    for spec in specs:
+        try:
+            tt.msg(f"Training for specs: {spec} (#{len(results)})")
+            kw_ = kw.copy()
+            kw_.update(dict(zip(specschema, spec)))
+            try:
+                result = runf(**kw_)
+            except Exception as e:
+                print("EXCEPTION!")
+                print(e)
+                # raise e
+                result = kw_
+                result.update({"type": "EXCEPTION", "exception": str(e)})
+
+            results.append(result)
+            if f is not None:
+                ujson.dump(results, f, indent=4)
+                f.flush()
+                os.fsync(f.fileno())
+        except RuntimeError as e:
+            print("Runtime error. Probably CUDA out of memory.\n...")
+
+        if len(results) >= maxtrials:
+            break
+    if f is not None:
+        f.close()
+    return results
 
 
 def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_config:Callable=None,
-                           minimize=True, minimum_init_coverage=1, population_size=10, no_duplicates=True, eps=0.1, **kw):
+                           minimize=True, minimum_init_coverage=1, population_size=10, no_duplicates=True,
+                                   eps=0.1, lamda=0, lamda2=0, maxtrials=np.infty, **kw):
     tt = q.ticktock("HPO")
     tt.msg("(using custom evolutionary HPO)")
     tt.msg("running experiments")
@@ -207,7 +297,7 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
                 result.update({"type": "EXCEPTION", "exception": str(e)})
 
             results.append(result)
-            if optout in result:
+            if optout in result and no_duplicates:
                 remainingspecs -= {spec,}
             cnt += 1
             if f is not None:
@@ -217,9 +307,55 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
         except RuntimeError as e:
             print("Runtime error. Probably CUDA out of memory.\n...")
 
+        if len(results) >= maxtrials:
+            return results
+
     pop = list(zip(initpop,
                    [res[optout] for res in results if optout in res]))
     print(pop)
+
+    def sample_a(_pop):
+        if lamda2 == 0:
+            ret = random.choice(_pop)
+            return ret
+        else:
+            _rankedpop = sorted(_pop, key=lambda x: x[1])
+            k, prevscore = 1, None
+            rankdists = []
+            for r in _rankedpop:
+                rankdists.append(k)
+                if r[1] != prevscore:
+                    k += 1
+                prevscore = r[1]
+            rankprobs = np.asarray([lamda2 * np.exp(-i*lamda2) for i in rankdists])
+            rankprobs = rankprobs/rankprobs.sum()
+            ret = np.random.choice(range(len(rankprobs)), p=rankprobs)
+            ret = _rankedpop[ret]
+            return ret
+
+    def sample_b_given_a(_a, _pop):
+        if lamda == 0:
+            ret = _a
+            while _a == ret:
+                ret = random.choice(_pop)
+            return ret
+        else:
+            # rank population by how close its score is to a
+            _rankedpop = sorted(_pop, key=lambda x: abs(x[1] - _a[1]))
+            _rankedpop = [r for r in _rankedpop if r != a]
+            k, prevscore = 1, None
+            rankdists = []
+            for r in _rankedpop:
+                rankdists.append(k)
+                if r[1] != prevscore:
+                    k += 1
+                prevscore = r[1]
+            rankprobs = np.asarray([lamda * np.exp(-i*lamda) for i in rankdists])
+            rankprobs = rankprobs/rankprobs.sum()
+            ret = np.random.choice(range(len(rankprobs)), p=rankprobs)
+            ret = _rankedpop[ret]
+            return ret
+
 
     while len(remainingspecs) > 0:
         rankedpop = sorted(pop, key=lambda x: x[-1], reverse=not minimize)
@@ -231,8 +367,9 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
                 spec = random.choice(list(remainingspecs))
                 validandunique = True
             else:
-                a = random.choice(pop)
-                b = random.choice(pop)
+                a = sample_a(pop)
+                b = sample_b_given_a(a, pop)
+                # b = random.choice(pop)
                 recomb = [False for _ in range(len(a))]
                 while all([recomb[i] == recomb[0] for i in range(len(recomb))]):
                     recomb = [random.choice([True, False]) for _ in range(len(a[0]))]
@@ -254,7 +391,8 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
 
             results.append(result)
             if optout in result:
-                remainingspecs -= {spec,}
+                if no_duplicates:
+                    remainingspecs -= {spec,}
                 pop.append((spec, result[optout]))
             cnt += 1
             if f is not None:
@@ -265,9 +403,13 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
             print("Runtime error. Probably CUDA out of memory.\n...")
         print(pop)
         print()
+
+        if len(results) >= maxtrials:
+            return results
     # print(json.dumps(results, indent=4))
     # print(len(results))
-    f.close()
+    if f is not None:
+        f.close()
     return results
 
 
@@ -444,6 +586,7 @@ def do_run_hpo_cv(numcvsplits=6, cuda=False, gpu=0):
 
 
 if __name__ == '__main__':
+    test_random()
     test_custom_genetic()
     # q.argprun(do_run_hpo_cv)
     # test_hyperopt()
