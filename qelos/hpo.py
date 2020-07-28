@@ -212,6 +212,8 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
             cnt += 1
             if f is not None:
                 ujson.dump(results, f, indent=4)
+                f.flush()
+                os.fsync(f.fileno())
         except RuntimeError as e:
             print("Runtime error. Probably CUDA out of memory.\n...")
 
@@ -257,12 +259,16 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
             cnt += 1
             if f is not None:
                 ujson.dump(results, f, indent=4)
+                f.flush()
+                os.fsync(f.fileno())
         except RuntimeError as e:
             print("Runtime error. Probably CUDA out of memory.\n...")
         print(pop)
         print()
     # print(json.dumps(results, indent=4))
     # print(len(results))
+    f.close()
+    return results
 
 
 
