@@ -1,18 +1,22 @@
 import json
+import math
 import os
 import random
 import shutil
 import string
 from collections import OrderedDict
+from copy import deepcopy
 from itertools import product
 from typing import Callable
 
 import optuna
 import torch
+from optuna import Trial
+
 import qelos as q
+import numpy as np
 
-
-__all__ = ["run_hpo_cv", "run_experiments", "run_experiments_optuna"]
+__all__ = ["run_hpo_cv", "run_experiments", "run_experiments_optuna", "run_experiments_custom_genetic"]
 
 import ujson
 
@@ -27,58 +31,240 @@ def run(**kw):
 
 def test_optuna():
     import optuna
-    def obj(trial):
-        x = trial.suggest_uniform("x", -5, 5)
-        y = trial.suggest_uniform("y", -5, 5)
+    uniq = set()
+    def obj(trial:Trial):
+        x = trial.suggest_discrete_uniform("x", -5, 6, 1) #suggest_uniform("x", -5, 5)
+        y = trial.suggest_discrete_uniform("y", -5, 6, 1)
+        setting = f"{x}-{y}"
+        if setting in uniq:
+            raise optuna.TrialPruned()
         if not(abs(x) > abs(y) or y < 0):
             raise optuna.TrialPruned()
             # raise Exception("invalid config")
+        uniq.add(setting)
         return (abs(x) + abs(y)) ** 2
 
     study = optuna.create_study(direction="minimize")
-    study.optimize(obj, n_trials=200, catch=(Exception,))
+    study.optimize(obj, n_trials=500, catch=(Exception,))
 
     print(study.best_params)
     print(study.best_value)
 
+    # ts = [t for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE]
+    ts = [t for t in study.trials]
+    x = [t.params["x"] for t in ts]
+    y = [t.params["y"] for t in ts]
+    # plt.scatter([t.params["x"] for t in ts], [t.params["y"] for t in ts])
+    # plt.show()
 
-    plt.scatter([t.params["x"] for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE], [t.params["y"] for t in study.trials if t.state == optuna.trial.TrialState.COMPLETE])
-    plt.scatter([t.params["x"] for t in study.trials], [t.params["y"] for t in study.trials])
+    heatmap, xedges, yedges = np.histogram2d(x, y, bins=20)
+    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+
+    plt.clf()
+    plt.imshow(heatmap.T, extent=extent, origin='lower')
     plt.show()
-
 
 
 def test_hyperopt():
     from hyperopt import hp, fmin
     import hyperopt
-    from hyperopt.pyll.stochastic import sample
+
     ranges = {
-        "dropout": hp.choice("dropout", [0., .1, .25, .5, .75]),
-        "dropoutemb": hp.choice("dropout", [0., 0.1]),
-        "epochs": [50, 100],
-        "batsize": hp.choice("batsize", [
-            (20, {"maxrdim": hp.choice("maxrdim", [100, 300])}),
-            (100, {"maxrdim": hp.choice("maxrdim", [100])})
-        ])
+        "x": [-3, -2, -1, 0, 1, 2, 3],
+        "y": [-3, -2, -1, 0, 1, 2, 3]
     }
-    print(sample(ranges))
-    # def obj(d):
-    #     x, y = d["x"], d["y"]
-    #     ret = (abs(x) + abs(y)) ** 2
-    #     return {"loss": ret, "status": hyperopt.STATUS_OK}
-    #
-    # space = {"x": hp.uniform("x", -10, 10), "y": hp.choice("y", [k - 10 for k in range(0, 20)])}
-    #
-    # trials = hyperopt.Trials()
-    #
-    # best = fmin(obj, space, hyperopt.tpe.suggest, max_evals=100, trials=trials)
-    # print(best)
-    # print(trials)
+
+    space = {k: hp.choice(k, v) for k, v in ranges.items()}
+
+    uniq = set()
+    def obj(d):
+        x, y = d["x"], d["y"]
+        setting = f"{x}-{y}"
+        status = hyperopt.STATUS_OK
+        if setting in uniq:
+            status = hyperopt.STATUS_FAIL
+        if not(abs(x) > abs(y) or y < 0):
+            status = hyperopt.STATUS_FAIL
+        if status == hyperopt.STATUS_OK:
+            uniq.add(setting)
+        return {"loss": (abs(x) + abs(y)) ** 2, "status": status}
+
+    trials = hyperopt.Trials()
+    best = fmin(obj, space, hyperopt.tpe.suggest, max_evals=200, trials=trials)
+    statuses = [t["result"]["status"] for t in trials.trials]
+    ts = zip(trials.vals["x"], trials.vals["y"], statuses)
+    # ts = [t for t in ts if t[2] == "ok"]
+    xs, ys, stats = zip(*ts)
+    xs = [ranges["x"][x] for x in xs]
+    ys = [ranges["y"][y] for y in ys]
+
+    heatmap, xedges, yedges = np.histogram2d(xs, ys, bins=20)
+    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+
+    plt.clf()
+    plt.imshow(heatmap.T, extent=extent, origin='lower')
+    plt.show()
+
+    print(best)
     # plt.scatter([t["misc"]['vals']["x"][0] for t in trials], [t["misc"]['vals']["y"][0] for t in trials])
     # plt.show()
 
 
-def run_experiments_optuna(runf, optout, ranges, path_prefix, check_config:Callable=None, minimize=True, **kw):
+def test_custom_genetic():
+    ranges = {"x": list(range(-3, 4)),
+              "y": list(range(-3, 4)),
+              "z": list(range(-3, 4)),
+              "a": list(range(-2, 3)),
+              "b": list(range(-2, 3)),
+              "c": list(range(-2, 3))}
+    def checkconfig(spec):
+        return spec["x"] + spec["y"] <= 0
+
+    def run(x=0, y=0, z=0, a=0, b=0, c=0):
+        ret = (abs(x) + abs(y) + abs(z) + abs(a) + abs(b) + abs(c)) ** 2
+        return {"loss": ret}
+
+    run_experiments_custom_genetic(run, "loss", ranges, None, checkconfig)
+
+
+
+def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_config:Callable=None,
+                           minimize=True, minimum_init_coverage=1, population_size=10, no_duplicates=True, eps=0.1, **kw):
+    tt = q.ticktock("HPO")
+    tt.msg("(using custom evolutionary HPO)")
+    tt.msg("running experiments")
+    tt.msg(ujson.dumps(ranges, indent=4))
+    _ranges = [[(k, v) for v in ranges[k]] for k in ranges]
+    all_combos = list(product(*_ranges))
+    random.shuffle(all_combos)
+    specs = [dict(x) for x in all_combos]
+    specschema = sorted(specs[0].keys())
+    specs = {tuple([x[k] for k in specschema]) for x in specs}
+    if check_config is not None:
+        specs = {spec for spec in specs if check_config(dict(zip(specschema, spec)))}
+    tt.msg(f"Number of possible combinations: {len(specs)}")
+    specs = list(specs)
+
+    rand = "".join(random.choice(string.ascii_letters) for i in range(6))
+    path = path_prefix + f".{rand}.xps" if path_prefix is not None else None
+    f = None
+    if path is not None:
+        f = open(path, "w")
+
+    revind = {k: {} for k in ranges}
+    for i, spec in enumerate(specs):
+        for k, v in zip(specschema, spec):
+            if f"{v}" not in revind[k]:
+                revind[k][f"{v}"] = set()
+            revind[k][f"{v}"].add(i)
+
+    initpop = []
+    # initcounts = {f"{k}:{v}": 0 for v in revind[k] for k in revind}
+    initcounts = {k: {ve: 0 for ve in revind[k]} for k in revind}
+
+    cnt = 0
+
+    while min([min([initcounts[k][v] for v in initcounts[k]]) for k in initcounts]) < minimum_init_coverage:
+        bestspec = None
+        bestspecscore = 0
+        bestpossiblespecscore = len(revind)
+        for i, spec in enumerate(specs):
+            if spec in initpop:
+                continue
+            specscore = 0
+            for k, v in zip(specschema, spec):
+                specscore += max(0, minimum_init_coverage - initcounts[k][f"{v}"])
+            if specscore > bestspecscore:
+                bestspec = spec
+                bestspecscore = specscore
+            if bestspecscore >= bestpossiblespecscore:
+                break
+        if bestspec is None:
+            raise Exception("something wrong")
+        initpop.append(bestspec)
+        for k, v in zip(specschema, bestspec):
+            initcounts[k][f"{v}"] += 1
+
+    # print(initpop)
+    tt.msg(f"Initial population of {len(initpop)} made. Evaluating...")
+
+    remainingspecs = set(deepcopy(specs))
+
+    results = []
+    for spec in initpop:
+        try:
+            tt.msg(f"Training for specs: {spec} (#{len(results)})")
+            kw_ = kw.copy()
+            kw_.update(dict(zip(specschema, spec)))
+            try:
+                result = runf(**kw_)
+            except Exception as e:
+                print("EXCEPTION!")
+                print(e)
+                # raise e
+                result = kw_
+                result.update({"type": "EXCEPTION", "exception": str(e)})
+
+            results.append(result)
+            remainingspecs -= {spec,}
+            cnt += 1
+            if f is not None:
+                ujson.dump(results, f, indent=4)
+        except RuntimeError as e:
+            print("Runtime error. Probably CUDA out of memory.\n...")
+
+    pop = list(zip(initpop, [res[optout] for res in results]))
+    print(pop)
+
+    while len(remainingspecs) > 0:
+        rankedpop = sorted(pop, key=lambda x: x[-1], reverse=not minimize)
+        pop = rankedpop[:population_size]
+        validandunique = False
+        spec = None
+        while not validandunique:
+            if random.random() < eps:
+                spec = random.choice(list(remainingspecs))
+                validandunique = True
+            else:
+                a = random.choice(pop)
+                b = random.choice(pop)
+                recomb = [False for _ in range(len(a))]
+                while all([recomb[i] == recomb[0] for i in range(len(recomb))]):
+                    recomb = [random.choice([True, False]) for _ in range(len(a[0]))]
+                # random.shuffle(recomb)
+                spec = tuple([a[0][i] if recomb[i] else b[0][i] for i in range(len(a[0]))])
+                validandunique = spec in remainingspecs
+        try:
+            tt.msg(f"Training for specs: {spec} (#{len(results)})")
+            kw_ = kw.copy()
+            kw_.update(dict(zip(specschema, spec)))
+            try:
+                result = runf(**kw_)
+            except Exception as e:
+                print("EXCEPTION!")
+                print(e)
+                # raise e
+                result = kw_
+                result.update({"type": "EXCEPTION", "exception": str(e)})
+
+            results.append(result)
+            remainingspecs -= {spec,}
+            pop.append((spec, result[optout]))
+            cnt += 1
+            if f is not None:
+                ujson.dump(results, f, indent=4)
+        except RuntimeError as e:
+            print("Runtime error. Probably CUDA out of memory.\n...")
+        print(pop)
+        print()
+    # print(json.dumps(results, indent=4))
+    # print(len(results))
+
+
+
+def run_experiments_optuna(runf, optout, ranges, path_prefix, check_config:Callable=None,
+                           minimize=True,
+                           **kw):
     tt = q.ticktock("HPO")
     tt.msg("running experiments")
     tt.msg(ujson.dumps(ranges, indent=4))
@@ -90,6 +276,10 @@ def run_experiments_optuna(runf, optout, ranges, path_prefix, check_config:Calla
 
     rand = "".join(random.choice(string.ascii_letters) for i in range(6))
     path = path_prefix + f".{rand}.xps"
+
+    f = None
+    if path is not None:
+        f = open(path, "w")
 
     results = []
 
@@ -116,13 +306,15 @@ def run_experiments_optuna(runf, optout, ranges, path_prefix, check_config:Calla
             hadexception = True
 
         results.append(result)
-        if path is not None:
-            with open(path, "w") as f:
-                ujson.dump(results, f, indent=4)
+        if f is not None:
+            ujson.dump(results, f, indent=4)
+            f.flush()
 
         if hadexception:
             raise optuna.TrialPruned()
         return result[optout]
+
+    f.close()
 
     study = optuna.create_study(direction="minimize" if minimize else "maximize")
     study.optimize(obj, n_trials=len(specs), catch=(Exception,))
@@ -242,6 +434,7 @@ def do_run_hpo_cv(numcvsplits=6, cuda=False, gpu=0):
 
 
 if __name__ == '__main__':
+    test_custom_genetic()
     # q.argprun(do_run_hpo_cv)
     # test_hyperopt()
-    test_optuna()
+    # test_optuna()
