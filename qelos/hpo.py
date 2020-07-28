@@ -16,7 +16,7 @@ from optuna import Trial
 import qelos as q
 import numpy as np
 
-__all__ = ["run_hpo_cv", "run_experiments", "run_experiments_optuna", "run_experiments_custom_genetic"]
+__all__ = ["run_hpo_cv", "run_experiments", "run_experiments_optuna", "run_experiments_custom_genetic", "run_experiments_random"]
 
 import ujson
 
