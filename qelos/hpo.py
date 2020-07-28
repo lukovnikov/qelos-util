@@ -222,7 +222,7 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
                            minimize=True, minimum_init_coverage=1, population_size=10, no_duplicates=True,
                                    eps=0.1, lamda=0, lamda2=0, maxtrials=np.infty, **kw):
     tt = q.ticktock("HPO")
-    tt.msg("(using custom evolutionary HPO)")
+    tt.msg("(using random search)")
     tt.msg("running experiments")
     tt.msg(ujson.dumps(ranges, indent=4))
     _ranges = [[(k, v) for v in ranges[k]] for k in ranges]
