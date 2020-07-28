@@ -114,18 +114,19 @@ def test_custom_genetic():
     ranges = {"x": list(range(-3, 4)),
               "y": list(range(-3, 4)),
               "z": list(range(-3, 4)),
-              "a": list(range(-2, 3)),
-              "b": list(range(-2, 3)),
-              "c": list(range(-2, 3))}
+              "a": list(range(-3, 4)),
+              "b": list(range(-3, 4)),
+              "c": list(range(-3, 4))}
     def checkconfig(spec):
         return spec["x"] + spec["y"] <= 0
 
     def run(x=0, y=0, z=0, a=0, b=0, c=0):
+        if random.random() < 0.1:
+            raise Exception("sum ting wong")
         ret = (abs(x) + abs(y) + abs(z) + abs(a) + abs(b) + abs(c)) ** 2
         return {"loss": ret}
 
     run_experiments_custom_genetic(run, "loss", ranges, None, checkconfig)
-
 
 
 def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_config:Callable=None,
@@ -206,14 +207,16 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
                 result.update({"type": "EXCEPTION", "exception": str(e)})
 
             results.append(result)
-            remainingspecs -= {spec,}
+            if optout in result:
+                remainingspecs -= {spec,}
             cnt += 1
             if f is not None:
                 ujson.dump(results, f, indent=4)
         except RuntimeError as e:
             print("Runtime error. Probably CUDA out of memory.\n...")
 
-    pop = list(zip(initpop, [res[optout] for res in results]))
+    pop = list(zip(initpop,
+                   [res[optout] for res in results if optout in res]))
     print(pop)
 
     while len(remainingspecs) > 0:
@@ -248,8 +251,9 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
                 result.update({"type": "EXCEPTION", "exception": str(e)})
 
             results.append(result)
-            remainingspecs -= {spec,}
-            pop.append((spec, result[optout]))
+            if optout in result:
+                remainingspecs -= {spec,}
+                pop.append((spec, result[optout]))
             cnt += 1
             if f is not None:
                 ujson.dump(results, f, indent=4)
