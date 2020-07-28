@@ -126,7 +126,7 @@ def test_custom_genetic():
         ret = (abs(x) + abs(y)) ** 2
         return {"loss": ret, "x": x, "y": y}
 
-    results = run_experiments_custom_genetic(run, "loss", ranges, None, checkconfig, maxtrials=50, no_duplicates=True)
+    results = run_experiments_custom_genetic(run, "loss", ranges, None, checkconfig, maxtrials=100, no_duplicates=True)
 
     x = [r["x"] for r in results]
     y = [r["y"] for r in results]
@@ -152,7 +152,7 @@ def test_random():
         ret = (abs(x) + abs(y)) ** 2
         return {"loss": ret, "x": x, "y": y}
 
-    results = run_experiments_random(run, ranges, None, checkconfig, maxtrials=50)
+    results = run_experiments_random(run, ranges, None, checkconfig, maxtrials=100)
 
     x = [r["x"] for r in results]
     y = [r["y"] for r in results]
