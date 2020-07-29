@@ -205,6 +205,7 @@ def run_experiments_random(runf, ranges, path_prefix, check_config:Callable, max
 
             results.append(result)
             if f is not None:
+                f.seek(0)
                 ujson.dump(results, f, indent=4)
                 f.flush()
                 os.fsync(f.fileno())
@@ -301,6 +302,7 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
                 remainingspecs -= {spec,}
             cnt += 1
             if f is not None:
+                f.seek(0)
                 ujson.dump(results, f, indent=4)
                 f.flush()
                 os.fsync(f.fileno())
@@ -396,6 +398,7 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
                 pop.append((spec, result[optout]))
             cnt += 1
             if f is not None:
+                f.seek(0)
                 ujson.dump(results, f, indent=4)
                 f.flush()
                 os.fsync(f.fileno())
@@ -459,9 +462,10 @@ def run_experiments_optuna(runf, optout, ranges, path_prefix, check_config:Calla
 
         results.append(result)
         if f is not None:
+            f.seek(0)
             ujson.dump(results, f, indent=4)
             f.flush()
-
+            os.fsync(f.fileno())
         if hadexception:
             raise optuna.TrialPruned()
         return result[optout]
