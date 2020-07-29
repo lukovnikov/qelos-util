@@ -184,9 +184,6 @@ def run_experiments_random(runf, ranges, path_prefix, check_config:Callable, max
 
     rand = "".join(random.choice(string.ascii_letters) for i in range(6))
     path = path_prefix + f".{rand}.xps" if path_prefix is not None else None
-    f = None
-    if path is not None:
-        f = open(path, "w")
 
     results = []
     for spec in specs:
@@ -204,18 +201,14 @@ def run_experiments_random(runf, ranges, path_prefix, check_config:Callable, max
                 result.update({"type": "EXCEPTION", "exception": str(e)})
 
             results.append(result)
-            if f is not None:
-                f.seek(0)
-                ujson.dump(results, f, indent=4)
-                f.flush()
-                os.fsync(f.fileno())
+            if path is not None:
+                with open(path, "w") as f:
+                    json.dump(results, f, indent=4)
         except RuntimeError as e:
             print("Runtime error. Probably CUDA out of memory.\n...")
 
         if len(results) >= maxtrials:
             break
-    if f is not None:
-        f.close()
     return results
 
 
