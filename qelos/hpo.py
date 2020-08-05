@@ -522,7 +522,7 @@ def run_experiments(runf, ranges, path=None, path_prefix=None, check_config:Call
             results.append(result)
             if path is not None:
                 with open(path, "w") as f:
-                    ujson.dump(results, f)#, indent=4)
+                    ujson.dump(results, f, indent=4)
 
             if pmtf is not None and pmtf(result):
                 tt.msg(f"Criterion satisfied.\nStopping further experiments.")
