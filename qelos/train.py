@@ -172,7 +172,7 @@ def eval_loop(model, dataloader, device=torch.device("cpu")):
 
 def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.device("cpu"),
                 batch_number=-1, max_batches=0, current_epoch=0, max_epochs=0,
-                on_start=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(),
+                on_start=tuple(), on_start_args=tuple(), on_before_optim_step=tuple(), on_after_optim_step=tuple(), on_end=tuple(),
                 do_backward=True, loss_scale=1.,
                 gradient_accumulation_steps=1, gradient_accumulation_average=True):
     """
@@ -192,6 +192,7 @@ def train_batch(batch=None, model=None, optim=None, losses=None, device=torch.de
     :param on_end:              collection of functions to call when batch is done
     :return:
     """
+    [e(batch=batch, batch_number=batch_number, current_epoch=current_epoch) for e in on_start_args]
     [e() for e in on_start]
     model.train()
 
