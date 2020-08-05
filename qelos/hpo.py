@@ -569,7 +569,7 @@ def run_hpo_cv(runf, ranges, numcvfolds=6, path=None, **kw):
             results["best"] = (spec, score)
         if path is not None:
             with open(path, "w") as f:
-                ujson.dump(results, f, indent=4)
+                ujson.dump(results, f)#, indent=4)
     return results
 
 
