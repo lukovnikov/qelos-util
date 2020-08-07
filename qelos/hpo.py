@@ -4,6 +4,7 @@ import os
 import random
 import shutil
 import string
+import traceback
 from collections import OrderedDict
 from copy import deepcopy
 from itertools import product
@@ -195,7 +196,7 @@ def run_experiments_random(runf, ranges, path_prefix, check_config:Callable, max
                 result = runf(**kw_)
             except Exception as e:
                 print("EXCEPTION!")
-                print(e)
+                traceback.print_exc(e)
                 # raise e
                 result = kw_
                 result.update({"type": "EXCEPTION", "exception": str(e)})
@@ -285,7 +286,7 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
                 result = runf(**kw_)
             except Exception as e:
                 print("EXCEPTION!")
-                print(e)
+                traceback.print_exc(e)
                 # raise e
                 result = kw_
                 result.update({"type": "EXCEPTION", "exception": str(e)})
@@ -379,7 +380,7 @@ def run_experiments_custom_genetic(runf, optout, ranges, path_prefix, check_conf
                 result = runf(**kw_)
             except Exception as e:
                 print("EXCEPTION!")
-                print(e)
+                traceback.print_exc(e)
                 # raise e
                 result = kw_
                 result.update({"type": "EXCEPTION", "exception": str(e)})
@@ -448,7 +449,7 @@ def run_experiments_optuna(runf, optout, ranges, path_prefix, check_config:Calla
             result = runf(**kw_)
         except Exception as e:
             print("EXCEPTION!")
-            print(e)
+            traceback.print_exc(e)
             result = kw_
             result.update({"type": "EXCEPTION", "exception": str(e)})
             hadexception = True
@@ -514,7 +515,7 @@ def run_experiments(runf, ranges, path=None, path_prefix=None, check_config:Call
                 result = runf(**kw_)
             except Exception as e:
                 print("EXCEPTION!")
-                print(e)
+                traceback.print_exc(e)
                 # raise e
                 result = kw_
                 result.update({"type": "EXCEPTION", "exception": str(e)})
