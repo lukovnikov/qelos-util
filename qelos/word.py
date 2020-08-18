@@ -9,7 +9,7 @@ import re
 
 import tqdm
 
-__all__ = ["WordEmb", "SwitchedWordEmb", "WordLinout",
+__all__ = ["WordEmb", "SwitchedWordEmb", "WordLinout", "VectorLoader",
            "MappedWordEmb", "MappedWordLinout", "UnkReplWordLinout", "UnkReplWordEmb"]
 
 
@@ -36,7 +36,7 @@ class VectorLoader(object):
         return W, D
 
     @classmethod
-    def transform_to_format(cls, path, outpath):
+    def transform_to_format(cls, path, outpath, prec=32):
         tt = q.ticktock("word vector formatter")
         tt.tick("formatting word vectors")
         skipped = 0
@@ -48,7 +48,7 @@ class VectorLoader(object):
                 numlines += 1
             if dim is None:
                 dim = len(re.split(r'\s', line.strip())) - 1
-        mat = np.zeros((numlines, dim), dtype="float32")
+        mat = np.zeros((numlines, dim), dtype=f"float{prec}")
         with open(path, "r", encoding="utf8") as inf:
             words = []
             wordset = set()
@@ -84,7 +84,6 @@ class VectorLoader(object):
         tt.msg("skipped {} vectors".format(skipped))
         tt.msg("{} duplicates".format(duplicate))
         tt.tock("formatted word vectors")
-
 
     @staticmethod
     def _load_path(path):
@@ -438,5 +437,6 @@ def test_mapped_wordlinout():
 
 
 if __name__ == '__main__':
-    test_mapped_wordlinout()
-    # VectorLoader.transform_to_format("/home/denis/Downloads/glove.6B.50d.txt", "../data/glove/glove.50d")
+    # test_mapped_wordlinout()
+    VectorLoader.transform_to_format("C:/Users\Denis\Downloads\glove.42B.300d.txt",
+                                     "../data/glove/glove.300d")
