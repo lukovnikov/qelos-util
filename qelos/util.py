@@ -366,7 +366,13 @@ def pad_tensors(x:List[torch.Tensor], dim:Union[int,Tuple[int],List[int]]=-2, va
         xsize[dim] = maxsize - xe.size(dim)
         _xe = xe
         if xsize[dim] > 0:
-            _xe = torch.cat([xe, torch.ones(xsize, device=xe.device, dtype=xe.dtype) * value], dim)
+            slicer = [slice(None)] * _xe.dim()
+            slicer[dim] = slice(-1, None)
+            filler = torch.ones_like(_xe[slicer])
+            repeats = [1] * _xe.dim()
+            repeats[dim] = xsize[dim]
+            filler = filler.repeat(*repeats) * value
+            _xe = torch.cat([xe, filler], dim)
         _x.append(_xe)
     return _x
 
