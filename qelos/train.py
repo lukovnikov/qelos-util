@@ -409,7 +409,13 @@ def run_training(run_train_epoch=None, run_valid_epoch=None, max_epochs=1, valid
             ttmsg)
         validepoch = False
         if run_valid_epoch is not None and validinter_count % validinter == 0:
-            ttmsg_v = run_valid_epoch(current_epoch=current_epoch, max_epochs=max_epochs)
+            if not isinstance(run_valid_epoch, (list, tuple, set)):
+                run_valid_epoch = [run_valid_epoch]
+            ttmsg_v = []
+            for run_valid_epoch_e in run_valid_epoch:
+                ttmsg_v_e = run_valid_epoch(current_epoch=current_epoch, max_epochs=max_epochs)
+                ttmsg_v.append(ttmsg_v_e)
+            ttmsg_v = " -- ".join(ttmsg_v)
             ttmsg += " -- " + ttmsg_v
             validepoch = True
         validinter_count += 1
