@@ -7,7 +7,7 @@ from torch.optim.lr_scheduler import LambdaLR
 
 class LRSchedule(LambdaLR):
     def __init__(self, optimizer, schedule, **kw):
-        super(LRSchedule, self).__init__(optimizer, lambda epoch: schedule.step(), **kw)
+        super(LRSchedule, self).__init__(optimizer, schedule, **kw)
         self._schedule = schedule
 
 
@@ -18,7 +18,7 @@ class HyperparamSchedule(object):
         self.schedule = schedule
 
     def step(self):
-        value = self.schedule.step()
+        value = self.schedule.get_lr()
         self.hyperparam._v = value
         return value
 
@@ -28,7 +28,6 @@ class SchedulePiece(object):
         super(SchedulePiece, self).__init__(**kw)
         assert(steps is not None)
         self.num_steps = steps
-        self.i = 0
 
     def get_lr_sched(self, optimizer):
         return LRSchedule(optimizer, self)
@@ -56,15 +55,17 @@ class SchedulePiece(object):
             other = Constant(other, steps=np.infty)
         return ProdSchedule(self, other)
 
-    def step(self):
-        if self.i >= self.num_steps:
+    def get_lr(self, i):
+        if i >= self.num_steps:
             return None
-        ret = self._step()
-        self.i += 1
+        ret = self._get_lr(i)
         return ret
 
-    def _step(self):
+    def _get_lr(self, i):
         pass
+
+    def __call__(self, i):
+        return self.get_lr(i)
 
 
 class CatSchedule(SchedulePiece):
@@ -73,12 +74,14 @@ class CatSchedule(SchedulePiece):
         super(CatSchedule, self).__init__(steps=steps, **kw)
         self.pieces = args
 
-    def step(self):
+    def get_lr(self, i):
         lr = None
-        i = 0
-        while lr is None and i < len(self.pieces):
-            lr = self.pieces[i].step()
-            i += 1
+        for piece in self.pieces:
+            if i >= piece.num_steps:     # piece must have been finalized
+                i = i - piece.num_steps
+            else:
+                lr = piece.get_lr(i)
+                break
         return lr
 
 
@@ -88,10 +91,10 @@ class SumSchedule(SchedulePiece):
         super(SumSchedule, self).__init__(steps=steps, **kw)
         self.pieces = args
 
-    def step(self):
+    def get_lr(self, i):
         lr = 0.
         for piece in self.pieces:
-            _lr = piece.step()
+            _lr = piece.get_lr(i)
             if _lr is None:
                 return None
             lr += _lr
@@ -104,10 +107,10 @@ class ProdSchedule(SchedulePiece):
         super(ProdSchedule, self).__init__(steps=steps, **kw)
         self.pieces = args
 
-    def step(self):
+    def get_lr(self, i):
         lr = 1.
         for piece in self.pieces:
-            _lr = piece.step()
+            _lr = piece.get_lr(i)
             if _lr is None:
                 return None
             lr *= _lr
@@ -119,7 +122,7 @@ class Constant(SchedulePiece):
         super(Constant, self).__init__(**kw)
         self.val = val
 
-    def _step(self):
+    def _get_lr(self, _):
         return self.val
 
 
@@ -133,8 +136,8 @@ class Linear(SchedulePiece):
             self._slope = 0
         self._offset = start
 
-    def _step(self):
-        i = self.i + .5
+    def _get_lr(self, i):
+        i = i + .5
         return i * self._slope + self._offset
 
 
@@ -143,8 +146,8 @@ class Lambda(SchedulePiece):
         super(Lambda, self).__init__(**kw)
         self.f = f
 
-    def _step(self):
-        return self.f(self.i)
+    def _get_lr(self, i):
+        return self.f(i)
 
 
 class Cosine(SchedulePiece):
@@ -156,8 +159,8 @@ class Cosine(SchedulePiece):
         _low, _high = low + 1, high - 1
         self._add, self._scale = (_low + _high) / 2, (high - low) / 2
 
-    def _step(self):
-        perc = self.i / self.num_steps
+    def _get_lr(self, i):
+        perc = i / self.num_steps
         ret = (np.cos((perc * self.cycles + self.phase) * 2 * np.pi) * self._scale) + self._add
         return ret
 
@@ -166,7 +169,7 @@ def try_cosine():
     import matplotlib.pyplot as plt
     sched = Cosine(cycles=1, steps=100)
     x = list(range(100))
-    y = [sched.step() for _ in x]
+    y = [sched.get_lr(i) for i in x]
     plt.plot(x, y)
     plt.show()
 
@@ -176,7 +179,7 @@ def try_cat():
     sched = (Linear(steps=10) >> Cosine(steps=90) >> Cosine(steps=100)) * Linear(steps=200, start=1, end=0)
     # sched = Linear(steps=5)
     x = list(range(sched.num_steps))
-    y = [sched.step() for _ in x]
+    y = [sched.get_lr(i) for i in x]
     plt.plot(x, y)
     plt.show()
 
