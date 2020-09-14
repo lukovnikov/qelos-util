@@ -37,7 +37,7 @@ __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_u
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
            "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of", "split_dataset",
            "percentagebar", "pad_tensors", "unstack", "EnvelopeSchedule",
-           "get_init_args", "save_run", "load_run", "init_save_run", "save_dataset", "load_dataset"]
+           "get_init_args", "save_run", "load_run", "init_save_run", "save_dataset", "load_dataset", "copy"]
 
 
 def get_init_args(self, locals):
@@ -1135,3 +1135,14 @@ def argprun(f, sigint_shell=True, **kwargs):   # command line overrides kwargs
             pass
 # endregion
 
+
+def copy(x):
+    if isinstance(x, torch.nn.Module):
+        replica = x.__new__(type(x))
+        replica.__dict__ = x.__dict__.copy()
+        replica._parameters = replica._parameters.copy()
+        replica._buffers = replica._buffers.copy()
+        replica._modules = replica._modules.copy()
+        return replica
+    else:
+        return copy(x)
