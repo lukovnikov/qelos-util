@@ -663,7 +663,7 @@ class EarlyStopper(object):
                  min_epochs=None, **kw):
         """
         :param validacc: validation metric to monitor
-        :param patience: patience
+        :param patience: patience. If negative, this earlystopper doesn't do anything
         :param margin: margin
         :param less_is_better:
         :param more_is_better:
