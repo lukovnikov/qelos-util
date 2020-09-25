@@ -133,7 +133,7 @@ def pp_epoch_losses(*losses:MetricWrapper):
 
 
 # region loops
-def eval_loop(model, dataloader, device=torch.device("cpu")):
+def eval_loop(model, dataloader, device=torch.device("cpu"), lastisgold=False):
     tto = q.ticktock("testing")
     tto.tick("testing")
     tt = q.ticktock("-")
@@ -150,6 +150,9 @@ def eval_loop(model, dataloader, device=torch.device("cpu")):
 
             inps.append(batch)
             batch_reset(model)
+
+            if lastisgold:
+                batch = batch[:-1]
             modelouts = model(*batch)
 
             tt.live("eval - [{}/{}]"
