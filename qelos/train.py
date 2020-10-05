@@ -695,6 +695,10 @@ class EarlyStopper(object):
     def get_remembered(self):
         return self.remembered
 
+    def reset(self):
+        self.max_x = np.infty * (-self.multiplier)
+        self.patience_counter = self.patience
+
     def on_epoch_end(self):
         if self.patience < 0:
             return
