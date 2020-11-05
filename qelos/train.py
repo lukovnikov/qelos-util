@@ -703,7 +703,7 @@ class EarlyStopper(object):
         if self.patience < 0:
             return
         x = q.v(self.validacc)      #.get_epoch_error()
-        if x * self.multiplier > self.max_x * self.multiplier + self.margin * self.multiplier:
+        if x * self.multiplier >= self.max_x * self.multiplier + self.margin * self.multiplier:
             self.max_x = x
             self.patience_counter = self.patience  # reset patience counter
             if self.remember_f is not None:
