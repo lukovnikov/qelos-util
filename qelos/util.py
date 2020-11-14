@@ -8,7 +8,7 @@ import signal
 import sys
 from datetime import datetime as dt
 import pickle
-from typing import List, Tuple, Union
+from typing import List, Tuple, Union, Dict
 
 import nltk
 import traceback
@@ -37,7 +37,7 @@ __all__ = ["ticktock", "argprun", "deep_copy", "copy_params", "seq_pack", "seq_u
            "iscallable", "isfunction", "getnumargs", "getkw", "issequence", "iscollection", "isnumber", "isstring",
            "StringMatrix", "tokenize", "recmap", "inf_batches", "set_lr", "remove_lr", "paramgroups_of", "split_dataset",
            "percentagebar", "pad_tensors", "unstack", "EnvelopeSchedule",
-           "get_init_args", "save_run", "load_run", "init_save_run", "save_dataset", "load_dataset", "copy"]
+           "get_init_args", "save_run", "load_run", "init_save_run", "save_dataset", "load_dataset", "copy", "pp_dict"]
 
 
 def get_init_args(self, locals):
@@ -1146,3 +1146,9 @@ def copy(x):
         return replica
     else:
         return copy(x)
+
+
+def pp_dict(d:Dict, indent=3):
+    items = sorted(d.items(), key=lambda x: x[0])
+    d = collections.OrderedDict(items)
+    print(json.dumps(d, indent=indent))
