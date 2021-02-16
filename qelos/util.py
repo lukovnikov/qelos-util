@@ -944,11 +944,19 @@ class ticktock(object):
         self.perc = None
         self.prevperc = None
         self._tick()
+        self._tickstack = []
 
     def tick(self, state=None):
-        if self.verbose and state is not None:
-            print(f"{self.prefix}: {state}")
-        self._tick()
+        self.tickpush(state=state)
+        # if self.verbose and state is not None:
+        #     print(f"{self.prefix}: {state}")
+        # self._tick()
+
+    def tickpush(self, state=None):
+        self._tickstack.append((dt.now(), state))
+        if self.verbose:
+            prefix = self._get_prefix()
+            print(prefix)
 
     def _tick(self):
         self.ticktime = dt.now()
@@ -962,7 +970,8 @@ class ticktock(object):
             if self.perc != self.prevperc:
                 if action != "":
                     action = " " + action + " -"
-                topr = "%s:%s %d" % (self.prefix, action, self.perc) + "%"
+                prefix = self._get_prefix()
+                topr = "%s:%s %d" % (prefix, action, self.perc) + "%"
                 if live:
                     self._live(topr)
                 else:
@@ -970,26 +979,58 @@ class ticktock(object):
                 self.prevperc = self.perc
 
     def tock(self, action=None, prefix=None):
-        duration = self._tock()
-        if self.verbose:
-            prefix = prefix if prefix is not None else self.prefix
-            action = action if action is not None else self.state
+        self.tockpop(action=action, prefix=prefix)
+        # duration = self._tock()
+        # if self.verbose:
+        #     prefix = prefix if prefix is not None else self.prefix
+        #     action = action if action is not None else self.state
+        #
+        #     termsize = shutil.get_terminal_size((-1, -1))
+        #     if termsize[0] > 0:
+        #         left = f"{prefix}: {action}"
+        #         right = f"  T: {self._getdurationstr(duration)}"
+        #         print(left + right.rjust(termsize[0] - len(left) - 1), end='\n')
+        #     else:
+        #         print(f"{prefix}: {action} in {self._getdurationstr(duration)}")
+        # return self
 
-            termsize = shutil.get_terminal_size((-1, -1))
-            if termsize[0] > 0:
-                left = f"{prefix}: {action}"
-                right = f"  T: {self._getdurationstr(duration)}"
-                print(left + right.rjust(termsize[0] - len(left) - 1), end='\n')
-            else:
-                print(f"{prefix}: {action} in {self._getdurationstr(duration)}")
-        return self
+    def tockpop(self, action=None, prefix=None):
+        if len(self._tickstack) == 0:
+            print("something wrong: empty tickstack")
+            return
+        else:
+            starttime, state = self._tickstack.pop(-1)
+            duration = (dt.now() - starttime).total_seconds()
+            if self.verbose:
+                if prefix is None:
+                    prefix = self._get_prefix()
+                action = action if action is not None else state
+
+                termsize = shutil.get_terminal_size((-1, -1))
+                if termsize[0] > 0:
+                    left = f"{prefix}: {action}"
+                    right = f"  T: {self._getdurationstr(duration)}"
+                    print(left + right.rjust(termsize[0] - len(left) - 1), end='\n')
+                else:
+                    print(f"{prefix}: {action} in {self._getdurationstr(duration)}")
 
     def msg(self, action=None, prefix=None):
         if self.verbose:
-            prefix = prefix if prefix is not None else self.prefix
+            if prefix is None:
+                prefix = self._get_prefix()
+            # prefix = prefix if prefix is not None else self.prefix
             action = action if action is not None else self.state
             print(f"{prefix}: {action}")
         return self
+
+    def _get_prefix(self):
+        ret = [self.prefix]
+        for _, f in self._tickstack:
+            if f is None:
+                f = "-"
+            ret.append(f)
+        prefix = ": ".join(ret)
+        return prefix
 
     def _getdurationstr(self, duration):
         if duration >= 60:
@@ -1029,7 +1070,8 @@ class ticktock(object):
 
     def live(self, x):
         if self.verbose:
-            self._live(f"{self.prefix}: {x}", f"T: {self._getdurationstr(self._tock())}")
+            prefix = self._get_prefix()
+            self._live(f"{prefix}: {x}", f"T: {self._getdurationstr(self._tock())}")
 
     def stoplive(self):
         if self.verbose:
