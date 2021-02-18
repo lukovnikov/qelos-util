@@ -1,7 +1,7 @@
 from typing import List, Callable, Union
 
 import fire
-from IPython import embed
+# from IPython import embed
 import ujson as json
 from fnmatch import fnmatch
 

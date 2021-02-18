@@ -3,7 +3,7 @@ from typing import Callable, Iterable
 import qelos as q
 import torch
 import numpy as np
-from IPython import embed
+# from IPython import embed
 import math
 from functools import partial
 
