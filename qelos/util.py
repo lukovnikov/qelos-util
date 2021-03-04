@@ -1061,11 +1061,13 @@ class ticktock(object):
             if termsize[0] > 0:
                 right = "  " + right
                 print(f"\r{x}" + right.rjust(termsize[0] - len(x) - 1), end='')
+                # sys.stdout.write(f"\r{x}" + right.rjust(termsize[0] - len(x) - 1))
             else:
                 if self.verbose_live_when_no_ttwy:
                     print(f"\r{x} \t {right}", end='')
         else:
             print(f"\r{x}", end='')
+            # sys.stdout.write(f"\r{x}")
         # sys.stdout.flush()
 
     def live(self, x):
