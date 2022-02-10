@@ -700,6 +700,8 @@ class EarlyStopper(object):
         self.patience_counter = self.patience
 
     def on_epoch_end(self):
+        if self.dostop:
+            return
         if self.patience < 0:
             return
         x = q.v(self.validacc)      #.get_epoch_error()
